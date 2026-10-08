@@ -645,12 +645,14 @@ def _search_pass(
     d = mujoco.MjData(m)
     aid = _actuator_of(m, an.jid)
     for delta in ARMATURE_GRID:
-        if (start[joints] + delta <= 0).any():
+        ok = {j: start[j] + delta > 0 for j in joints}  # armature must stay positive
+        if not any(ok.values()):
             for j in joints:
-                cost[j].append(math.inf)  # armature must stay positive
+                cost[j].append(math.inf)
             continue
         for j in joints:
-            m.dof_armature[an.dadr[j]] = start[j] + delta
+            # a joint that cannot take this shift keeps its start value
+            m.dof_armature[an.dadr[j]] = start[j] + delta if ok[j] else start[j]
         r = np.zeros((S, len(an.names)))
         for s in sel:
             d.qpos[:] = rows.qpos[s]
@@ -662,6 +664,9 @@ def _search_pass(
             tau = np.clip(an.kp * (rows.ctrl[s] - q) - an.kd * v, -an.limit, an.limit)
             r[s] = d.qfrc_inverse[an.dadr] - tau
         for j in joints:
+            if not ok[j]:
+                cost[j].append(math.inf)
+                continue
             k = se.clean[:, j]
             X = np.c_[se.v[k, j], np.ones(k.sum())]
             co, *_ = np.linalg.lstsq(X, r[k, j], rcond=None)

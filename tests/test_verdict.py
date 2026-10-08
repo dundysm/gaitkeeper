@@ -215,6 +215,19 @@ def test_physics_names_a_chain_and_only_groups_that_restore():
         )
     )
     assert "the outcome follows mass and inertia" in d.cause
+    assert not any("randomization" in c for c in d.caveats)
+    d = decide(
+        Evidence(
+            **G,
+            nominal="fail",
+            d="above_floor",
+            d_chains=["left leg"],
+            counterfactual="changes",
+            localized=["mass and inertia"],
+            localized_randomized=True,
+        )
+    )
+    assert d.verdict == "PHYSICS" and any("randomization draw" in c for c in d.caveats)
 
 
 def test_no_reference_carries_the_caveats():

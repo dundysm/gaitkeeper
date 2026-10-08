@@ -53,6 +53,7 @@ class Evidence:
     d_chains: list[str] = field(default_factory=list)
     counterfactual: str | None = None  # "changes" | "no_change" | None (not run)
     localized: list[str] = field(default_factory=list)  # groups whose swap restores the outcome
+    localized_randomized: bool = False  # the restoring values are the source's randomization draw
     limit_active: bool = False
     limit_counterfactual: str | None = None  # "changes" | "no_change" | None
     source_shows_limitation: bool | None = None
@@ -232,7 +233,16 @@ def _golden(ev: Evidence, common: list[str]) -> Decision:
                 ruled_out=["contract mapping (A to C pass against the golden trace)"],
                 caveats=[
                     "the chain is named from D; a group is named only when swapping it restores the outcome"
-                ],
+                ]
+                + (
+                    [
+                        "the restoring values are the source's startup randomization draw: the "
+                        "target differs from this sample of the training distribution, not "
+                        "necessarily from the distribution"
+                    ]
+                    if ev.localized_randomized
+                    else []
+                ),
             )
         return Decision(
             "UNDETERMINED",

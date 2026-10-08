@@ -177,6 +177,7 @@ def diagnose_trace(
             dg.nominal = dg.cf.target
             ev.counterfactual = "changes" if dg.cf.changes else "no_change"
             ev.localized = list(dg.cf.localized)
+            ev.localized_randomized = any("randomization draw" in n for n in dg.cf.notes)
         else:
             dg.nominal = run_task(
                 contract, target, onnx, golden_scenario(trace), seeds, workers=workers

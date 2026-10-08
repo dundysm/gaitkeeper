@@ -171,15 +171,18 @@ def _match_columns(o: np.ndarray, e: np.ndarray, tol: np.ndarray) -> list[int] |
     return p if sorted(p) == list(range(d)) else None
 
 
-def _shift(x: np.ndarray, lag: int, reset: np.ndarray | None = None) -> np.ndarray:
-    """Row k gets x[k - lag]; rows without a source repeat the first available row."""
+def _shift(
+    x: np.ndarray, lag: int, reset: np.ndarray | None = None, fill: str = "repeat"
+) -> np.ndarray:
+    """Row k gets x[k - lag]; rows without a source repeat the first available row,
+    or hold zeros when ``fill`` is "zeros" (a delay line that starts empty)."""
     out = np.empty_like(x)
     if lag >= 0:
         out[lag:] = x[: len(x) - lag]
-        out[:lag] = x[0]
+        out[:lag] = 0.0 if fill == "zeros" else x[0]
     else:
         out[:lag] = x[-lag:]
-        out[lag:] = x[-1]
+        out[lag:] = 0.0 if fill == "zeros" else x[-1]
     return out
 
 
@@ -534,8 +537,13 @@ def _term_alternatives(
         )
     if tid == "projected_gravity":
         q = s.root_quat
-        s2 = _state(s, root_quat=q[:, [1, 2, 3, 0]])  # (x, y, z, w) read as (w, x, y, z)
-        alts.append(("quaternion read as xyzw", None, None, s2))
+        # The trace holds (w, x, y, z). A (w, x, y, z) buffer read as (x, y, z, w) gives
+        # w' = z, x' = w, y' = x, z' = y; an (x, y, z, w) buffer read as (w, x, y, z)
+        # gives the opposite rotation of the components.
+        s2 = _state(s, root_quat=q[:, [3, 0, 1, 2]])
+        alts.append(("quaternion (w, x, y, z) read as (x, y, z, w)", None, None, s2))
+        s3 = _state(s, root_quat=q[:, [1, 2, 3, 0]])
+        alts.append(("quaternion (x, y, z, w) read as (w, x, y, z)", None, None, s3))
     if tid == "gait_phase":
         p = dict(term.get("params", {}))
         p["stand_threshold"] = None
@@ -739,20 +747,21 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
         if not ok.all():
             tr.first_bad_step = int(rows_step[np.where(~ok.all(1))[0][0]])
 
-            def lag_raw(lag: int) -> np.ndarray:
-                return _shift(raw, lag)[rows_step][:, col]
+            def lag_raw(lag: int, fill: str) -> np.ndarray:
+                return _shift(raw, lag, fill=fill)[rows_step][:, col]
 
             cands = []
             for lag in (1, 2):
-                rl = lag_raw(lag)
-                cands.append(
-                    Candidate(
-                        f"action applied {lag} policy step late (delay)",
-                        1,
-                        lambda rl=rl: expected(rl),
-                        tol=lambda e, rl=rl: tol_t(rl, e),
+                for fill, how in (("repeat", ""), ("zeros", "; zero actions before the first")):
+                    rl = lag_raw(lag, fill)
+                    cands.append(
+                        Candidate(
+                            f"action applied {lag} policy step late (timing, not a term){how}",
+                            1,
+                            lambda rl=rl: expected(rl),
+                            tol=lambda e, rl=rl: tol_t(rl, e),
+                        )
                     )
-                )
             cands.append(Candidate("default offset not added", 1, lambda: raw_rows * sc[None]))
             cands.append(
                 Candidate("target = raw action (no scale, no offset)", 1, lambda: raw_rows.copy())
@@ -796,10 +805,16 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
             sc_fit = _fit_scale(tgt - of[None], raw_rows * sc[None], fit_rows, per_column=True)
             if sc_fit is not None:
                 badj = [tnames[j] for j in np.where(np.abs(sc_fit - 1) > 1e-3)[0]]
+                # One factor on every joint, up to the contract's own scale rounding.
+                r0 = float(np.median(sc_fit))
+                r_tol = abs(r0) * (1e-3 + rs / np.maximum(np.abs(sc), 1e-12))
+                uniform = bool(np.all(np.abs(sc_fit - r0) <= r_tol))
                 cands.append(
                     Candidate(
-                        f"action scale differs on {badj}",
-                        len(badj) + 1,
+                        f"action scale x{r0:.3g} on every joint"
+                        if uniform and len(badj) == len(tnames)
+                        else f"action scale differs on {badj}",
+                        2 if uniform else len(badj) + 1,
                         lambda f=sc_fit: raw_rows * (sc * f)[None] + of[None],
                         structural=False,
                         fitted={"ratio": dict(zip(tnames, sc_fit.tolist()))},
@@ -846,24 +861,37 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
                 + kp[None] * tgt_unc
             )
             lim = _vec(contract, "model.effort_limit", tnames)
+            # Limits are reported, never compared (plan section 7.3). A joint whose effort
+            # sits at a constant magnitude below the PD prediction is clipping at the
+            # harness's own limit; those rows are excluded, and a clip level that differs
+            # from the contract's limit is an active limit difference. The clip is only
+            # believed when the joint follows the PD law on every other row, so a gain
+            # error is never explained away as a clip.
             sat = np.zeros_like(pred, dtype=bool)
             inferred_limit: dict[str, float] = {}
+            for j in range(pred.shape[1]):
+                m = float(np.abs(eff[:, j]).max())
+                s_j = (np.abs(pred[:, j]) > m + tol[:, j]) & (
+                    np.abs(np.abs(eff[:, j]) - m) <= 1e-4 * max(1, m)
+                )
+                rest_fits = bool(np.all(np.abs(eff[~s_j, j] - pred[~s_j, j]) <= tol[~s_j, j]))
+                if s_j.any() and rest_fits:
+                    sat[:, j] = s_j
+                    inferred_limit[tnames[j]] = m
+            limit_diff: dict[str, dict[str, Any]] = {}
             if lim is not None:
-                sat = np.abs(pred) > lim[None]
-                pred = np.clip(pred, -lim[None], lim[None])
-            else:
-                # Limits unknown: a joint whose effort sits at a constant magnitude below the
-                # prediction is saturating; infer the limit and exclude those rows.
-                for j in range(pred.shape[1]):
-                    m = float(np.abs(eff[:, j]).max())
-                    s_j = (np.abs(pred[:, j]) > m + tol[:, j]) & (
-                        np.abs(np.abs(eff[:, j]) - m) <= 1e-4 * max(1, m)
-                    )
-                    if s_j.any():
-                        sat[:, j] = s_j
-                        inferred_limit[tnames[j]] = m
+                for j, n in enumerate(tnames):
+                    beyond = np.abs(eff[:, j]) > lim[j] + tol[:, j]
+                    clipped_below = n in inferred_limit and inferred_limit[n] < lim[j] - 1e-6
+                    if beyond.any() or clipped_below:
+                        active = beyond | (sat[:, j] if clipped_below else False)
+                        limit_diff[n] = {
+                            "contract": float(lim[j]),
+                            "harness_clip": inferred_limit.get(n),
+                            "share_of_steps": float(np.mean(active)),
+                        }
             err = np.abs(eff - pred)
-            ok = (err <= tol) | (sat & (lim is None))
+            ok = (err <= tol) | sat
             tr = TermResult(
                 "effort",
                 "C",
@@ -880,6 +908,27 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
             tr.detail["joint_steps_at_limit"] = int(sat.sum())
             if inferred_limit:
                 tr.detail["inferred_limits"] = inferred_limit
+                if lim is None:
+                    res.notes.append(
+                        "harness clips effort ("
+                        + ", ".join(f"{n} at {v:.4g}" for n, v in inferred_limit.items())
+                        + "); the contract states no limit to compare"
+                    )
+            if limit_diff:
+                tr.detail["limit_differences"] = limit_diff
+                res.notes.append(
+                    "LIMIT_DIFFERENCE_ACTIVE: "
+                    + ", ".join(
+                        f"{n} contract {v['contract']:g}"
+                        + (
+                            f", harness clips at {v['harness_clip']:.4g}"
+                            if v["harness_clip"] is not None
+                            else ", harness exceeds it"
+                        )
+                        + f" ({v['share_of_steps']:.1%} of steps)"
+                        for n, v in limit_diff.items()
+                    )
+                )
             if not ok.all():
                 tr.first_bad_step = int(np.where(~ok.all(1))[0][0])
                 tr.pattern, tr.ambiguous, tr.detail["fit"] = _classify_gains(
@@ -966,10 +1015,20 @@ def _classify_gains(
             if np.allclose(g_kp, kp_hat, rtol=1e-2):
                 return f"gains bound by index in {tname} order instead of by name", [], fitted
         return f"gains bound to the wrong joints on {bad}", [], fitted
-    ratio = kp_hat / kp
-    if np.allclose(ratio, ratio[0], rtol=1e-2):
-        return f"gains scaled x{ratio[0]:.4g}", [], fitted
-    return f"gains differ on {bad}", [], fitted
+    rp = kp_hat / np.maximum(kp, 1e-9)
+    rd = kd_hat / np.maximum(kd, 1e-9)
+    kp_ok = np.allclose(rp, 1.0, rtol=1e-2)
+    kd_ok = np.allclose(rd, 1.0, rtol=1e-2)
+    uni_p = np.allclose(rp, rp[0], rtol=1e-2)
+    uni_d = np.allclose(rd, rd[0], rtol=1e-2)
+    if uni_p and uni_d and not kp_ok and not kd_ok and abs(rp[0] - rd[0]) <= 1e-2 * rp[0]:
+        return f"kp and kd scaled x{rp[0]:.4g}", [], fitted
+    if kd_ok and uni_p and not kp_ok:
+        return f"kp scaled x{rp[0]:.4g}", [], fitted
+    if kp_ok and uni_d and not kd_ok:
+        return f"kd scaled x{rd[0]:.4g}", [], fitted
+    which = "kp" if kd_ok else ("kd" if kp_ok else "kp and kd")
+    return f"{which} differ on {bad}", [], fitted
 
 
 # -- excitation, verdict --------------------------------------------------------------------------------
@@ -1030,6 +1089,7 @@ def verify(trace: Trace, contract: Contract, policy: Any = None) -> Report:
     ]
     if unknown:
         findings.append(f"CONTROLLER_ASSUMED: {unknown} not stated by the contract")
+    findings.extend(n for n in c.notes if n.startswith("LIMIT_DIFFERENCE_ACTIVE"))
     if label:
         evidence = "L1"
     elif verdict == "PASS" and trace.kind == "golden" and b.status == "pass":

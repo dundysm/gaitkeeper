@@ -12,6 +12,14 @@ Backends (``RunConfig.backend``):
   changed to the largest one that does and is no larger, and the run says so.
 * ``python_pd`` (debugging): PD every MuJoCo step in Python, integrator as the
   model says.
+* ``standin_implicit`` (test fixture): a drive implicit in position and
+  velocity, built from Python PD with kd 0, joint damping kd + h kp and the
+  Euler integrator, so that (M + h kd + h^2 kp) a = kp (q* - q) - (kd + h kp) v
+  - bias. It stands in for a PhysX style drive in the residual tests (plan
+  Appendix B); never a controller claim.
+
+The model is an MJCF, a compiled ``.mjb``, or a recorded trace directory, in
+which case the model the source simulated is loaded (``models.load_model``).
 
 Torque limits come from the target MJCF unless ``limit_source="contract"``.
 Every result carries the controller line with provenance; any field taken
@@ -30,9 +38,10 @@ import mujoco
 import numpy as np
 
 from .contract import Contract
+from .models import find_id, load_model
 from .terms import ObservationBuilder, quat_to_mat
 
-BACKENDS = ("native_implicit", "explicit_zoh", "python_pd")
+BACKENDS = ("native_implicit", "explicit_zoh", "python_pd", "standin_implicit")
 FALL_HEIGHT_FRACTION = 0.6
 FALL_TILT_RAD = 1.0
 
@@ -93,13 +102,14 @@ class RunConfig:
     push_generator: PushGenerator | None = None
     external: list[External] | None = None  # None: the contract's ownership
     limit_source: str = "model"  # "model" or "contract"
-    timestep: float | None = None  # python_pd only: override the MuJoCo step
+    timestep: float | None = None  # python_pd and standin_implicit: override the MuJoCo step
     integrator: str | None = None  # python_pd only: "euler", "implicitfast", "implicit"
     armature: float | dict[str, float] | None = None  # override on the bound joints
     model_edit: Callable[[mujoco.MjModel], None] | None = None
     tail_s: float = 5.0
     record: bool = False
     contacts: bool = False  # log which bodies touch the world at every physics step
+    physics: bool = False  # with record: log the state before every physics step (p/ keys)
 
 
 def load_schedule(path: str | Path) -> list[tuple[float, tuple[float, float, float]]]:
@@ -143,6 +153,7 @@ class Binding:
     substeps: int  # MuJoCo steps per policy step
     pd_every: int  # MuJoCo steps per torque update
     integrator: str
+    model_notes: list[str] = field(default_factory=list)
 
 
 _INTEGRATORS = {
@@ -234,6 +245,7 @@ class RunResult:
     dadr: np.ndarray | None = None  # qvel addresses of the policy joints
     contacts: np.ndarray | None = None  # (physics steps, bodies) touching a world geom
     body_names: list[str] | None = None
+    vel: np.ndarray | None = None  # (policy steps, 3) body vx, vy and yaw rate after each step
 
     @property
     def survived(self) -> bool:
@@ -304,7 +316,9 @@ class Runner:
         )
         lines["assumed"] = assumed
         lines["mismatch"] = mismatch
-        lines["CONTROLLER_ASSUMED"] = bool(assumed) or mismatch or backend == "python_pd"
+        lines["CONTROLLER_ASSUMED"] = (
+            bool(assumed) or mismatch or backend in ("python_pd", "standin_implicit")
+        )
         return lines
 
     @staticmethod
@@ -337,10 +351,11 @@ class Runner:
 
     # -- model --
     def build(self, cfg: RunConfig, backend: str) -> tuple[mujoco.MjModel, mujoco.MjData, Binding]:
-        m = mujoco.MjModel.from_xml_path(self.mjcf)
+        lm = load_model(self.mjcf)
+        m = lm.model
         if cfg.model_edit is not None:
             cfg.model_edit(m)
-        jid = np.array([mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, n) for n in self.names])
+        jid = np.array([find_id(m, mujoco.mjtObj.mjOBJ_JOINT, n) for n in self.names])
         missing = [n for n, j in zip(self.names, jid) if j < 0]
         if missing:
             raise KeyError(f"joints not in {self.mjcf}: {missing}")
@@ -389,13 +404,17 @@ class Runner:
             h = h0
             pd_every = 1
             m.opt.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
+        elif backend == "standin_implicit":
+            h = float(cfg.timestep) if cfg.timestep else h0
+            pd_every = 1
+            m.opt.integrator = mujoco.mjtIntegrator.mjINT_EULER
         else:
             h = float(cfg.timestep) if cfg.timestep else h0
             pd_every = 1
             if cfg.integrator:
                 m.opt.integrator = _INTEGRATORS[cfg.integrator]
-        if backend != "python_pd" and cfg.timestep:
-            raise ValueError("timestep override is for python_pd only")
+        if backend not in ("python_pd", "standin_implicit") and cfg.timestep:
+            raise ValueError("timestep override is for python_pd and standin_implicit only")
         sub = self.policy_dt / h
         if abs(sub - round(sub)) > 1e-6:
             h2, _ = _divisor_step(self.policy_dt, h)
@@ -453,6 +472,7 @@ class Runner:
             substeps=int(round(sub)),
             pd_every=pd_every,
             integrator=_INTEGRATOR_NAMES.get(int(m.opt.integrator), str(m.opt.integrator)),
+            model_notes=list(lm.notes),
         )
         return m, d, b
 
@@ -511,6 +531,10 @@ class Runner:
                         hold_pose[i] = float(v)
         kp = np.where(owned, self.kp, ext_kp)
         kd = np.where(owned, self.kd, ext_kd)
+        if backend == "standin_implicit":
+            # Velocity and position implicit: Euler integrates joint damping implicitly.
+            m.dof_damping[b.dadr] += kd + b.timestep * kp
+            kd = np.zeros(n)
         if backend == "native_implicit":
             for i in np.flatnonzero(~owned):
                 a = b.aid[i]
@@ -563,6 +587,14 @@ class Runner:
             else None
         )
         contacts: list[np.ndarray] | None = [] if cfg.contacts else None
+        plog: dict[str, list] | None = (
+            {
+                k: []
+                for k in ("qpos", "qvel", "ctrl", "step", "substep", "time", "xfrc", "xfrc_body")
+            }
+            if cfg.record and cfg.physics
+            else None
+        )
         hinge_types = (int(mujoco.mjtJoint.mjJNT_HINGE), int(mujoco.mjtJoint.mjJNT_SLIDE))
         all_hinge = [j for j in range(m.njnt) if int(m.jnt_type[j]) in hinge_types]
 
@@ -649,6 +681,20 @@ class Runner:
                 active = [(bid, f, until) for bid, f, until in active if tnow < until - 1e-12]
                 for bid, f, _ in active:
                     d.xfrc_applied[bid, :3] += f
+                if plog is not None:
+                    plog["qpos"].append(d.qpos.copy())
+                    plog["qvel"].append(d.qvel.copy())
+                    plog["ctrl"].append(target.copy())
+                    plog["step"].append(t)
+                    plog["substep"].append(s)
+                    plog["time"].append(tnow)
+                    plog["xfrc"].append(
+                        np.sum([f for _, f, _ in active], axis=0) if active else np.zeros(3)
+                    )
+                    bodies = {bid for bid, _, _ in active}
+                    if len(bodies) > 1:
+                        raise ValueError("physics log: concurrent pushes on two bodies")
+                    plog["xfrc_body"].append(bodies.pop() if bodies else -1)
                 if backend == "native_implicit":
                     d.ctrl[b.aid] = target
                 elif s % b.pd_every == 0:
@@ -713,6 +759,7 @@ class Runner:
             timestep=b.timestep,
             seconds=(fell_at if fell_at is not None else steps * self.policy_dt),
             dadr=b.dadr.copy(),
+            vel=np.c_[vx_h, vy_h, wz_h] if vx_h else np.zeros((0, 3)),
         )
         if contacts is not None:
             res.contacts = np.array(contacts, dtype=bool).reshape(len(contacts), m.nbody)
@@ -721,6 +768,11 @@ class Runner:
             res.log = {k: np.asarray(v) for k, v in log.items()}
             res.log["reset"] = np.arange(len(log["obs"])) == 0
             res.log["_hinge_names"] = np.array([m.joint(j).name for j in all_hinge])
+            if plog is not None:
+                for k, v in plog.items():
+                    res.log[f"p/{k}"] = np.asarray(v)
+                res.log["_body_names"] = np.array([m.body(i).name for i in range(m.nbody)])
+                res.log["_sim_dt"] = np.array(b.timestep)
         return res
 
     @staticmethod
@@ -730,11 +782,7 @@ class Runner:
             mujoco.mj_forward(m, d)
             return {"t": time, "kind": "velocity", "vector": [float(x) for x in p.vector]}
         name = p.body
-        bid = (
-            b.base_body
-            if name in (None, "base")
-            else mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
-        )
+        bid = b.base_body if name in (None, "base") else find_id(m, mujoco.mjtObj.mjOBJ_BODY, name)
         if bid < 0:
             raise KeyError(f"push body {name!r} not in the model")
         active.append((bid, np.asarray(p.vector, dtype=float), time + p.duration))
@@ -746,19 +794,35 @@ class Runner:
             "duration": p.duration,
         }
 
-    def to_trace(self, res: RunResult, meta: dict[str, Any] | None = None):
-        """Harness-format trace of a recorded run. Marked as written by this runner,
-        so verifying it can only show self-consistency."""
+    def to_trace(self, res: RunResult, meta: dict[str, Any] | None = None, kind: str = "harness"):
+        """Trace of a recorded run, harness format by default. Marked as written by
+        this runner, so verifying it can only show self-consistency. With
+        ``physics`` logging the ``p/`` keys are included (golden format)."""
         from .trace import Trace
 
         if res.log is None:
             raise ValueError("run with record=True")
         lg = dict(res.log)
         hinge = [str(x) for x in lg.pop("_hinge_names")]
+        bodies = lg.pop("_body_names", None)
+        sim_dt = lg.pop("_sim_dt", None)
         arrays = {k: v for k, v in lg.items()}
         arrays["action_applied"] = arrays["action"]
+        extra: dict[str, Any] = {}
+        if sim_dt is not None:
+            extra = {
+                "sim_dt": float(sim_dt),
+                "decimation": int(round(self.policy_dt / float(sim_dt))),
+                "policy_dt": self.policy_dt,
+                "target_joint_names": list(self.names),
+                "body_names": [str(x) for x in bodies],
+                "physics_rows": "state before each mj_step",
+                "framework": {"name": "sim2sim runner", "mujoco": mujoco.__version__},
+                "engine": f"mujoco {mujoco.__version__} ({res.controller['backend']})",
+            }
         meta = {
             "written_by_sim2sim_runner": True,
+            **extra,
             "controller": res.controller,
             "state_layout": {
                 "free_joint": True,
@@ -769,4 +833,4 @@ class Runner:
             },
             **(meta or {}),
         }
-        return Trace(arrays, meta, kind="harness")
+        return Trace(arrays, meta, kind=kind)

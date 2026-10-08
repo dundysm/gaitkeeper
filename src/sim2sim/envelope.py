@@ -240,7 +240,7 @@ def _dead_text(key: str, d: dict[str, Any], ref: list[float] | None, stand: floa
 
 
 def _pick(env: Envelope, key: str, sign: int, target: float) -> float | None:
-    """A tracked command inside the reference range, closest to target."""
+    """A tracked command inside the reference and limit ranges, closest to target."""
     r = env.ref.get(AX_NAME[key]) if env.ref else None
     best = None
     for row in env.rows[key]:
@@ -254,6 +254,9 @@ def _pick(env: Envelope, key: str, sign: int, target: float) -> float | None:
             continue
         if r and not (r[0] - 1e-9 <= c <= r[1] + 1e-9):
             continue
+        lim = env.limit.get(AX_NAME[key]) if env.limit else None
+        if lim and not (lim[0] - 1e-9 <= c <= lim[1] + 1e-9):
+            continue  # a scenario stays inside what the command interface allows
         if best is None or abs(c - target) < abs(best - target):
             best = c
     return best

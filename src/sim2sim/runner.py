@@ -112,6 +112,14 @@ class RunConfig:
     physics: bool = False  # with record: log the state before every physics step (p/ keys)
 
 
+def pool_context():
+    """Worker processes start from a fresh server, not a fork of a process that
+    already runs inference threads (forking those can deadlock)."""
+    import multiprocessing
+
+    return multiprocessing.get_context("forkserver")
+
+
 def load_schedule(path: str | Path) -> list[tuple[float, tuple[float, float, float]]]:
     """Command schedule from YAML (``schedule: [[t, vx, vy, wz], ...]``) or CSV rows t,vx,vy,wz."""
     path = Path(path)

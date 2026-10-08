@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 
 from .contract import Contract
-from .runner import RunConfig, Runner
+from .runner import RunConfig, Runner, pool_context
 
 DEAD_RATIO = 0.2
 SECONDS = 15.0
@@ -177,7 +177,10 @@ def sweep(
             jobs.append((key, tuple(cmd), kw))
     workers = workers or min(8, os.cpu_count() or 1)
     with ProcessPoolExecutor(
-        workers, initializer=_init, initargs=(contract.to_dict(), mjcf, onnx)
+        workers,
+        mp_context=pool_context(),
+        initializer=_init,
+        initargs=(contract.to_dict(), mjcf, onnx),
     ) as ex:
         res = list(ex.map(_one, jobs))
         rows: dict[str, list[dict[str, Any]]] = {k: [] for k in g}

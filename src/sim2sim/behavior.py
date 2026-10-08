@@ -31,7 +31,7 @@ import mujoco
 import numpy as np
 
 from .contract import Contract
-from .runner import Push, PushGenerator, RunConfig, Runner
+from .runner import Push, PushGenerator, RunConfig, Runner, pool_context
 
 STILL_ACTION_STD = 0.02
 STILL_JOINT_SPEED = 0.002  # rad/s
@@ -508,7 +508,10 @@ def probe(
                     )
     workers = workers or min(8, os.cpu_count() or 1)
     with ProcessPoolExecutor(
-        workers, initializer=_winit, initargs=(contract.to_dict(), mjcf, onnx)
+        workers,
+        mp_context=pool_context(),
+        initializer=_winit,
+        initargs=(contract.to_dict(), mjcf, onnx),
     ) as ex:
         res = list(ex.map(_work, jobs, chunksize=1))
 

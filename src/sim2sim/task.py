@@ -23,7 +23,7 @@ import numpy as np
 
 from .contract import Contract
 from .envelope import DEAD_RATIO, L1_DRIFT, L1_SAT, L1_SPEED_RATIO
-from .runner import External, Push, PushGenerator, RunConfig, Runner
+from .runner import External, Push, PushGenerator, RunConfig, Runner, pool_context
 
 AXES = ("vx", "vy", "wz")
 MIN_SEGMENT_S = 1.0
@@ -285,7 +285,10 @@ def run_task(
     workers = workers or min(4, os.cpu_count() or 1)
     jobs = [(spec, s, backend, model_edit) for s in seeds]
     with ProcessPoolExecutor(
-        workers, initializer=_winit, initargs=(contract.to_dict(), str(model), str(onnx))
+        workers,
+        mp_context=pool_context(),
+        initializer=_winit,
+        initargs=(contract.to_dict(), str(model), str(onnx)),
     ) as ex:
         out = list(ex.map(_wrun, jobs))
     return TaskOutcome(spec, str(model), [o for o, _ in out], out[0][1] if out else {})

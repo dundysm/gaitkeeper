@@ -44,6 +44,32 @@ def test_injected_defect_is_named_or_abstained(d, harness, files, policy):
     assert r["correct"], (r, rep.summary())
 
 
+def test_harness_clip_below_the_contract_limit_is_a_limit_difference(harness, files, policy):
+    tr = harness.standard()
+    t = tr["target"].astype(np.float64)
+    eff = harness.effort(t)
+    j = int(np.argmax(np.abs(eff).max(0)))
+    c = 0.6 * float(np.abs(eff[:, j]).max())
+    eff[:, j] = np.clip(eff[:, j], -c, c)
+    tr.arrays["effort"] = eff.astype(np.float32)
+    c2 = files.copy()
+    lim = {n: 1e4 for n in harness.names}
+    c2.set("model.effort_limit", lim, "user", "test: training limits above the harness clip")
+    rep = verify(tr, c2, policy)
+    assert rep.boundaries["C"].status == "pass", rep.summary()
+    lim = [f for f in rep.findings if f.startswith("LIMIT_DIFFERENCE_ACTIVE")]
+    assert lim and harness.names[j] in lim[0] and f"clips at {c:.4g}" in lim[0]
+
+
+def test_gain_error_is_not_explained_away_as_a_clip(harness, files, policy):
+    tr = harness.standard()
+    eff = harness.effort(tr["target"].astype(np.float64), kp=harness.kp * 0.7)
+    tr.arrays["effort"] = eff.astype(np.float32)
+    rep = verify(tr, files, policy)
+    assert rep.boundaries["C"].status == "fail"
+    assert not any("clips at" in f for f in rep.findings)
+
+
 def test_equally_simple_fits_abstain():
     o = np.ones((4, 2))
     e = np.zeros((4, 2))

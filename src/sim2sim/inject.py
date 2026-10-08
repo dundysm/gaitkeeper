@@ -207,6 +207,17 @@ def defects() -> list[Defect]:
 
         return h.standard(edit=edit)
 
+    def wxyz_as_xyzw(h: Harness) -> Trace:
+        q = h.state.root_quat[:, [3, 0, 1, 2]]
+
+        def edit(v: dict[str, np.ndarray]) -> None:
+            r = _state(h.state, root_quat=q)
+            v["projected_gravity"] = term_values(r, [_term(h, "projected_gravity")], h.ctx)[
+                "projected_gravity"
+            ]
+
+        return h.standard(edit=edit)
+
     def world_gyro(h: Harness) -> Trace:
         return h.standard(ctx=_ctx(h.ctx, imu_frame="world"))
 
@@ -265,6 +276,29 @@ def defects() -> list[Defect]:
         a1[1:] = a[:-1]
         a1[0] = a[0]
         tr.arrays["target"] = h.target(a1).astype(np.float32)
+        return tr
+
+    def delay_zeros(h: Harness, lag: int) -> Trace:
+        # A delay line that starts empty: zero actions until the first one arrives.
+        tr = h.standard()
+        a = tr["action"].astype(np.float64)
+        a1 = np.zeros_like(a)
+        a1[lag:] = a[:-lag]
+        tr.arrays["target"] = h.target(a1).astype(np.float32)
+        return tr
+
+    def scale_all(h: Harness) -> Trace:
+        tr = h.standard()
+        tr.arrays["target"] = h.target(tr["action"].astype(np.float64), scale=2 * h.scale).astype(
+            np.float32
+        )
+        return tr
+
+    def gains(h: Harness, kp: float, kd: float) -> Trace:
+        tr = h.standard()
+        t = tr["target"].astype(np.float64)
+        tr.arrays["effort"] = h.effort(t, h.kp * kp, h.kd * kd).astype(np.float32)
+        del tr.arrays["target"]
         return tr
 
     def clip(h: Harness) -> Trace:
@@ -353,7 +387,20 @@ def defects() -> list[Defect]:
             lambda h: hist(h, init="zeros"),
             contract_variant="history5",
         ),
-        Defect("quaternion read as xyzw", "A", "projected_gravity", "xyzw", xyzw),
+        Defect(
+            "quaternion (x, y, z, w) read as (w, x, y, z)",
+            "A",
+            "projected_gravity",
+            "(x, y, z, w) read as (w, x, y, z)",
+            xyzw,
+        ),
+        Defect(
+            "quaternion (w, x, y, z) read as (x, y, z, w)",
+            "A",
+            "projected_gravity",
+            "(w, x, y, z) read as (x, y, z, w)",
+            wxyz_as_xyzw,
+        ),
         Defect("gyro in the world frame", "A", "base_ang_vel", "world frame", world_gyro),
         Defect(
             "observation remap skipped (Isaac order)",
@@ -371,7 +418,24 @@ def defects() -> list[Defect]:
         ),
         Defect("action offset dropped", "C", "target", "default offset not added", no_offset),
         Defect("one-step action delay", "C", "target", "1 policy step late", delay),
+        Defect(
+            "two-step action delay, empty delay line",
+            "C",
+            "target",
+            "2 policy step late (timing, not a term); zero actions before the first",
+            lambda h: delay_zeros(h, 2),
+        ),
+        Defect("action scale doubled", "C", "target", "action scale x2 on every joint", scale_all),
         Defect("raw action clipped before scaling", "C", "target", "clipped at", clip),
+        Defect("kp scaled 0.7", "C", "effort", "kp scaled x0.7", lambda h: gains(h, 0.7, 1.0)),
+        Defect("kd scaled 0.5", "C", "effort", "kd scaled x0.5", lambda h: gains(h, 1.0, 0.5)),
+        Defect(
+            "kp and kd scaled 1.3",
+            "C",
+            "effort",
+            "kp and kd scaled x1.3",
+            lambda h: gains(h, 1.3, 1.3),
+        ),
         Defect(
             "gains bound by index in Isaac order",
             "C",
@@ -383,7 +447,7 @@ def defects() -> list[Defect]:
             "multiple: xyzw + offset dropped + gains order",
             "A+C",
             None,
-            "xyzw|default offset not added|gains bound by index",
+            "read as (w, x, y, z)|default offset not added|gains bound by index",
             multi,
         ),
         Defect("simulator state read one step late", "A", None, "1 step late", timing),

@@ -572,12 +572,6 @@ def record(args: argparse.Namespace) -> Path:
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    mujoco.mj_saveModel(m, str(out / "model.mjb"))
-    try:
-        env.scene.write(out / "model_xml")
-        xml_note = "model_xml/scene.xml written from the scene spec (pre-randomization)"
-    except Exception as e:  # pragma: no cover - depends on the mjlab version
-        xml_note = f"XML export failed: {e}"
     dr = {}
     for fld in ("geom_friction", "body_ipos", "body_mass"):
         try:
@@ -585,6 +579,18 @@ def record(args: argparse.Namespace) -> Path:
             dr[fld] = _np(v).tolist() if v.ndim == m.__getattribute__(fld).ndim + 1 else None
         except Exception:
             dr[fld] = None
+    # The compiled model is saved as simulated: startup randomization written in.
+    from ..models import apply_randomization, model_patch
+
+    apply_randomization(m, dr)
+    mujoco.mj_saveModel(m, str(out / "model.mjb"))
+    try:
+        env.scene.write(out / "model_xml")
+        xml_note = "model_xml/scene.xml written from the scene spec (pre-randomization)"
+        xml_model = mujoco.MjModel.from_xml_path(str(out / "model_xml" / "scene.xml"))
+        (out / "model_patch.json").write_text(json.dumps(model_patch(m, xml_model)))
+    except Exception as e:  # pragma: no cover - depends on the mjlab version
+        xml_note = f"XML export or patch failed: {e}"
     meta = {
         "framework": {
             "name": "mjlab",

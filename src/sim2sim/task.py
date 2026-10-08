@@ -112,22 +112,29 @@ class TaskOutcome:
         return out
 
     def segment_table(self) -> list[str]:
-        """Per segment: mean achieved over surviving seeds and how many seeds missed the bar."""
+        """Per segment: mean achieved over the seeds judged there and how many seeds
+        missed the bar; seeds that fell before the segment ended are counted apart."""
         segs = self.spec.segment_list()
+        n = len(self.seeds)
         out = []
         for i, sg in enumerate(segs):
             ach = [s.segments[i].achieved for s in self.seeds if s.segments[i].achieved is not None]
+            fell = sum(s.fell_at is not None and s.fell_at < sg.t1 - 1e-9 for s in self.seeds)
             miss = sum(bool(s.segments[i].problems) for s in self.seeds)
             kinds = sorted({k for s in self.seeds for k, _ in s.segments[i].problems})
-            a = np.mean(ach, axis=0) if ach else [math.nan] * 3
-            out.append(
-                f"  {sg.label()}  achieved ({a[0]:+.2f}, {a[1]:+.2f}, {a[2]:+.2f})  "
-                + (
-                    f"misses the bar on {miss}/{len(self.seeds)} seeds: {', '.join(kinds)}"
-                    if miss
-                    else "ok"
-                )
-            )
+            if ach:
+                a = np.mean(ach, axis=0)
+                text = f"achieved ({a[0]:+.2f}, {a[1]:+.2f}, {a[2]:+.2f})"
+            else:
+                text = "not judged"
+            tail = []
+            if miss:
+                tail.append(f"misses the bar on {miss}/{n} seeds: {', '.join(kinds)}")
+            if fell:
+                tail.append(f"fell before its end on {fell}/{n} seeds")
+            if not ach and fell < n:
+                tail.append("no judged window (push settle time)")
+            out.append(f"  {sg.label()}  {text}  " + ("; ".join(tail) if tail else "ok"))
         return out
 
 

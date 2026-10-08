@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from .compare import Report, verify
 from .contract import Contract
 from .counterfactual import Counterfactual, counterfactual, golden_scenario
@@ -54,6 +56,15 @@ class Diagnosis:
                 f"Task {self.task.spec.name!r} ({len(self.task.seeds)} seeds) on {self.task.model}: "
                 f"misses the bar on {self.task.n_failed}/{len(self.task.seeds)} seeds"
             )
+            sp = self.task.spec
+            if sp.hold:
+                out.append(
+                    f"  held by the harness, not the policy: {len(sp.hold)} joints "
+                    f"({', '.join(sp.hold[:2])}{', ...' if len(sp.hold) > 2 else ''}); "
+                    f"their observations: {sp.unowned_obs}"
+                )
+            if sp.pushes or sp.push_generator:
+                out.append(f"  pushes: {_push_text(sp)}")
             out.extend(self.task.segment_table())
             for s in self.task.seeds:
                 falls = [t for k, t in s.problems if k in ("fall", "torque limit")]
@@ -80,6 +91,22 @@ class Diagnosis:
             else None,
             "notes": self.notes,
         }
+
+
+def _push_text(sp: TaskSpec) -> str:
+    g = sp.push_generator
+    parts = [f"{np.linalg.norm(p.vector):.0f} N at {p.t:g} s" for p in sp.pushes]
+    if g is not None and g.force:
+        size = f"{g.force:g} N" if g.fixed else f"{0.5 * g.force:g} to {g.force:g} N"
+        parts.append(
+            f"{size} {g.direction} for {g.duration:g} s on {g.body} every {g.every_s:g} s "
+            f"from {g.first_s:g} s"
+        )
+    if g is not None and g.velocity:
+        parts.append(
+            f"base kicks up to {g.velocity:g} m/s every {g.every_s:g} s from {g.first_s:g} s"
+        )
+    return "; ".join(parts)
 
 
 def _mapping(rep: Report) -> str | None:

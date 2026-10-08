@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 
 from sim2sim.cli import main
@@ -36,3 +38,37 @@ def test_inspect_writes_contract(tmp_path, files):
         == 0
     )
     assert (tmp_path / "o.yaml").read_text().startswith("schema")
+
+
+def test_task_on_the_issue_145_setup(tmp_path, capsys):
+    """The unitree_rl_lab policy on unitree_mujoco's G1, arms held, a waypoint-like
+    tour of small commands and in-place turns, then punches: an L1 finding, a
+    behavioral limitation, never PHYSICS or CONTRACT."""
+    from assets import UMJ_G1, URL_G1, need
+
+    need(URL_G1 / "deploy.yaml", URL_G1 / "policy.onnx", UMJ_G1)
+    sched = tmp_path / "tour.csv"
+    sched.write_text("0,0,0,0\n2,0.15,0,0\n6,0,0,0.2\n10,0.3,0,0\n14,0,0.1,0\n18,0,0,0\n")
+    arms = ",".join(
+        f"{s}_{j}_joint"
+        for s in ("left", "right")
+        for j in ("shoulder_pitch", "shoulder_roll", "shoulder_yaw", "elbow")
+        + ("wrist_roll", "wrist_pitch", "wrist_yaw")
+    )
+    out = tmp_path / "task.json"
+    code = main(
+        ["task", "--deploy", str(URL_G1 / "deploy.yaml"), "--onnx", str(URL_G1 / "policy.onnx")]
+        + ["--preset", "unitree_rl_lab_g1_29dof_velocity@4960b84", "--mjcf", str(UMJ_G1)]
+        + ["--schedule", str(sched), "--seconds", "24", "--hold", arms]
+        + ["--push-every", "3", "--push-first", "19", "--push-force", "600"]
+        + ["--seeds", "2", "--json", str(out)]
+    )
+    text = capsys.readouterr().out
+    j = json.loads(out.read_text())
+    dec = j["decision"]
+    assert code == 5 and dec["verdict"] is None, text
+    assert dec["headline"] == "TASK_FAILURE_OBSERVED / BEHAVIORAL_LIMITATION"
+    assert dec["evidence"] == "L1"
+    assert "a silent contract error is not excluded" in dec["caveats"]
+    assert set(j["task"]["kinds"]) == {"dead zone", "fall"}
+    assert "Finding  TASK_FAILURE_OBSERVED / BEHAVIORAL_LIMITATION  (evidence L1, exit 5)" in text

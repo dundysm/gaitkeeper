@@ -122,9 +122,12 @@ def sample_configs(
 
 
 def s17a_margin(
-    r: Runner, backend: str, configs: list[tuple[str, np.ndarray]] | None = None
+    r: Runner,
+    backend: str,
+    configs: list[tuple[str, np.ndarray]] | None = None,
+    cfg: RunConfig | None = None,
 ) -> CheckResult:
-    m, d, b = r.build(RunConfig(), "python_pd")
+    m, d, b = r.build(cfg or RunConfig(), "python_pd")
     configs = configs or sample_configs(r, policy_walk=False)
     hs = {"python_pd": b.timestep}
     if r.sim_dt is not None:

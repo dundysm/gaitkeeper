@@ -4,7 +4,7 @@ import mujoco
 import numpy as np
 import pytest
 import yaml
-from assets import URL_G1, need
+from assets import UMJ_G1, URL_G1, need
 
 from sim2sim.checks import classify_modes, joint_inertia, pd_margin, s16_symmetry, s18_commands
 from sim2sim.readers.unitree_deploy import read_unitree_deploy
@@ -54,6 +54,59 @@ def test_s17b_mode_classes():
     assert len(c["slow"]) == 1 and len(c["bad"]) == 3
     c = classify_modes(np.array([1.00002, 0.99]), h)  # neutral drift within finite-difference noise
     assert c["outside"] == 0 and not c["bad"]
+
+
+def test_s17b_slow_complex_pair_is_drift_fast_turning_is_not():
+    h = 0.005
+    pair = [1.000114 + 0.000117j, 1.000114 - 0.000117j]  # growth 44 s, turning 0.023 rad/s
+    c = classify_modes(np.array(pair), h)
+    assert c["outside"] == 0 and not c["bad"] and len(c["drift"]) == 2
+    turning = math.exp(h / 10.0) * np.exp(1j * 2 * math.pi * 1.0 * h)  # slow growth, 1 Hz
+    assert len(classify_modes(np.array([turning, turning.conjugate()]), h)["bad"]) == 2
+    fast = math.exp(h / 0.5) * np.exp(0.0002j)  # turns slowly but grows in 0.5 s
+    assert len(classify_modes(np.array([fast, fast.conjugate()]), h)["bad"]) == 2
+
+
+def test_s17b_open_case_rl_lab_umj_5ms():
+    """The pair once reported at 5 ms (modulus 1.0001, growth about 44 s): the same
+    for every finite-difference step and scheme, and present at 2 ms with the same
+    rate per second, so neither numerical nor a 5 ms effect. It is slow drift."""
+    need(URL_G1 / "deploy.yaml", UMJ_G1)
+    from sim2sim.behavior import VARIANTS
+    from sim2sim.checks import s17b_modes, settle
+    from sim2sim.policy import OnnxPolicy
+    from sim2sim.presets import apply_preset
+    from sim2sim.runner import RunConfig, Runner
+
+    c = read_unitree_deploy(URL_G1 / "deploy.yaml", URL_G1 / "policy.onnx")[0]
+    apply_preset(c, "unitree_rl_lab_g1_29dof_velocity@4960b84")
+    r = Runner(c, str(UMJ_G1), OnnxPolicy(URL_G1 / "policy.onnx"))
+    rates = {}
+    for h, edit in ((0.002, None), (0.005, VARIANTS["step 5 ms"][0])):
+        cfg = RunConfig(model_edit=edit)
+        qpos, qvel = settle(r, cfg=cfg)
+        m, d, b = r.build(cfg, "native_implicit")
+        m.dof_frictionloss[:] = 0.0
+        d.qpos[:], d.qvel[:] = qpos, qvel
+        mujoco.mj_forward(m, d)
+        d.ctrl[b.aid] = r.default
+        found = set()
+        for eps, centered in ((1e-4, True), (1e-6, True), (1e-8, True), (1e-6, False)):
+            a = np.zeros((2 * m.nv, 2 * m.nv))
+            mujoco.mjd_transitionFD(m, d, eps, centered, a, None, None, None)
+            w = np.linalg.eigvals(a)
+            z = max((x for x in w if x.imag > 1e-6), key=abs)
+            found.add((round(math.log(abs(z)) / h, 3), round(np.angle(z) / h, 3)))
+        assert len(found) == 1, found  # independent of the difference step and scheme
+        rates[h] = found.pop()
+    (g2, w2), (g5, w5) = rates[0.002], rates[0.005]
+    assert (
+        0.015 < g5 < 0.035 and g2 == pytest.approx(g5, rel=0.2) and w2 == pytest.approx(w5, rel=0.2)
+    )
+    res = s17b_modes(r, "native_implicit", cfg=RunConfig(model_edit=VARIANTS["step 5 ms"][0]))
+    assert res.status == "PASS" and res.data["bad"] == 0, res.lines
+    assert res.data["slow_tc"][0] == pytest.approx(0.36, abs=0.02)
+    assert any("drift, not counted" in x and "growth time" in x for x in res.lines)
 
 
 def _url(tmp_path, mutate=None):

@@ -12,7 +12,10 @@ SKIP) and the lines a report prints.
   of one step, contacts held, frictionloss zeroed). One slow positive real mode
   is the robot tipping over and is reported as a fall time constant; any other
   mode outside the unit circle (negative, complex, or real growing faster than
-  0.1 s) fails.
+  0.1 s) fails. Modes slower than 2 s, real or a complex pair turning slower
+  than 1 / 2 s, sit next to the floating base symmetries (translation and yaw
+  on flat ground): they are reported as drift and not counted. The tolerance
+  on |lambda| itself is per step and unchanged.
 * S18 scenario commands against trained ranges (limit ranges when no trained
   range is known) and measured dead zones.
 * S19 torque limit differences, contract against MJCF, latent or active from
@@ -34,7 +37,7 @@ from .runner import Binding, RunConfig, Runner
 
 MARGIN_BOUND = 4.0
 SLOW_MODE_TC = 0.1  # s; real positive modes growing slower than this are tipping
-DRIFT_TC = 2.0  # s; slower real modes are drift within finite-difference noise (no restoring force)
+DRIFT_TC = 2.0  # s; slower modes (real, or complex turning slower than 1/DRIFT_TC) are drift
 MODE_TOL = 1e-4  # per step, above which |lambda| counts as outside the unit circle
 SYM_TOL = 1e-6
 
@@ -239,8 +242,13 @@ def classify_modes(eig: np.ndarray, h: float) -> dict[str, Any]:
                 drift.append((complex(e), tc))
             else:
                 (slow if tc >= SLOW_MODE_TC else bad).append((complex(e), tc))
+            continue
+        tc = h / math.log(abs(e))
+        turn = abs(np.angle(e)) / h  # rad/s
+        if not rl and tc > DRIFT_TC and turn * DRIFT_TC < 1.0:
+            drift.append((complex(e), tc))  # a slow near-neutral pair, not an oscillation
         else:
-            bad.append((complex(e), h / math.log(abs(e))))
+            bad.append((complex(e), tc))
     return {
         "outside": int(out.sum()) - len(drift),
         "slow": slow,
@@ -274,8 +282,13 @@ def s17b_modes(r: Runner, backend: str, cfg: RunConfig | None = None) -> CheckRe
         )
     if cl["drift"]:
         lines.append(
-            f"{len(cl['drift'])} near-neutral real mode(s) slower than {DRIFT_TC:g} s (drift, not counted): "
-            + ", ".join(f"{e.real:.5f}" for e, _ in cl["drift"])
+            f"{len(cl['drift'])} near-neutral mode(s) slower than {DRIFT_TC:g} s (drift, not counted): "
+            + ", ".join(
+                f"{e.real:.5f}"
+                if abs(e.imag) < 1e-6
+                else f"{e.real:.6f}{e.imag:+.6f}j (growth time {tc:.3g} s)"
+                for e, tc in cl["drift"]
+            )
         )
     if len(cl["bad"]) > 6:
         lines.append(f"... {len(cl['bad']) - 6} more")

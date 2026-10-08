@@ -13,7 +13,9 @@ authors = [{ name = "Dundy Pasupuleti", email = "dundysm@gmail.com" }]
 dependencies = ["numpy>=1.24", "pyyaml>=6", "onnxruntime>=1.16"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff>=0.4"]
+dev = ["pytest>=7", "ruff>=0.4", "onnx>=1.15"]
+# The closed-loop runner, checks and envelope simulate in MuJoCo on the CPU.
+sim = ["mujoco>=3.3"]
 # The recorder runs inside the training stack. For mjlab it needs the pinned
 # versions below; they are listed for reference and installed separately.
 record-mjlab = ["mjlab==1.2.0", "mujoco==3.5.0", "mujoco-warp==3.5.0", "warp-lang==1.12.*", "scipy"]

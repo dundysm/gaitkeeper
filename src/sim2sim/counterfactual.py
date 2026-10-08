@@ -323,18 +323,35 @@ _FIELDS = {
 
 
 def _randomization_note(cf: Counterfactual, source: str) -> None:
-    """Say so when what restores the outcome is part of the source's randomization draw."""
-    p = Path(source) / "dr.json"
-    if not p.exists():
+    """Say so when what restores the outcome is part of the source's randomization draw:
+    a recorded field whose value differs from the source's unrandomized XML."""
+    p, xml = Path(source) / "dr.json", Path(source) / "model_xml" / "scene.xml"
+    if not p.exists() or not xml.exists():
         return
     drawn = {k for k, v in json.loads(p.read_text()).items() if v is not None}
-    for g in [x for x in cf.groups + cf.parts if x.restores]:
-        hit = _FIELDS.get(g.name, set()) & drawn
+    restoring = [x for x in cf.groups + cf.parts if x.restores]
+    wanted = (
+        set().union(*(_FIELDS.get(g.name, set()) & drawn for g in restoring))
+        if restoring
+        else set()
+    )
+    if not wanted:
+        return
+    nominal = mujoco.MjModel.from_xml_path(str(xml))
+    live = _source_model(source)
+    moved = {
+        f
+        for f in wanted
+        if not np.allclose(getattr(live, f), getattr(nominal, f), rtol=1e-6, atol=1e-9)
+    }
+    del nominal
+    for g in restoring:
+        hit = _FIELDS.get(g.name, set()) & moved
         if hit:
             cf.notes.append(
                 f"{g.name}: the source's values include its startup randomization draw "
-                f"({', '.join(sorted(hit))} in dr.json); the source is one sample of the "
-                f"training distribution, not its nominal model"
+                f"({', '.join(sorted(hit))} differ from its unrandomized XML); the source is one "
+                f"sample of the training distribution, not its nominal model"
             )
 
 

@@ -107,7 +107,9 @@ def diagnose_trace(
     run_counterfactual: bool = True,
     task: TaskSpec | None = None,
     workers: int | None = None,
+    target_edit: Any = None,
 ) -> Diagnosis:
+    """``target_edit`` changes the target model after loading (a picklable callable)."""
     rep = verify(trace, contract, policy)
     ref = "golden" if trace.kind == "golden" else "harness"
     ev = Evidence(
@@ -126,12 +128,21 @@ def diagnose_trace(
     dg = Diagnosis(decide(ev), ev, rep)
     if ev.mapping != "pass" or target is None or ev.invalid:
         return dg
-    dg.d = dynamics_residual(trace, contract, target)
+    tmodel: Any = target
+    if target_edit is not None:
+        from .models import load_model
+
+        tmodel = load_model(target).model
+        target_edit(tmodel)
+    dg.d = dynamics_residual(trace, contract, tmodel)
+    del tmodel
     ev.d, ev.d_chains = dg.d.status, dg.d.above_chains
     source = trace.path if trace.path and (Path(trace.path) / "model_xml").exists() else None
     if onnx and trace.meta.get("schedule"):
         if source and run_counterfactual:
-            dg.cf = counterfactual(trace, contract, onnx, target, seeds=seeds, workers=workers)
+            dg.cf = counterfactual(
+                trace, contract, onnx, target, seeds=seeds, workers=workers, target_edit=target_edit
+            )
             dg.nominal = dg.cf.target
             ev.counterfactual = "changes" if dg.cf.changes else "no_change"
             ev.localized = list(dg.cf.localized)
@@ -145,7 +156,9 @@ def diagnose_trace(
     elif onnx:
         dg.notes.append("the trace records no command schedule: nominal closed loop not run")
     if task is not None and onnx:
-        dg.task = run_task(contract, target, onnx, task, seeds[:3], workers=workers)
+        dg.task = run_task(
+            contract, target, onnx, task, seeds[:3], workers=workers, model_edit=target_edit
+        )
         ev.task = "pass" if dg.task.passed else "fail"
         ev.task_kinds = dg.task.kinds()
         if not dg.task.passed and source:

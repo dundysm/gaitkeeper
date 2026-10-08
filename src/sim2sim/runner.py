@@ -546,11 +546,8 @@ class Runner:
             if cfg.record
             else None
         )
-        all_hinge = [
-            j
-            for j in range(m.njnt)
-            if m.jnt_type[j] in (mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE)
-        ]
+        hinge_types = (int(mujoco.mjtJoint.mjJNT_HINGE), int(mujoco.mjtJoint.mjJNT_SLIDE))
+        all_hinge = [j for j in range(m.njnt) if int(m.jnt_type[j]) in hinge_types]
 
         for t in range(steps):
             time = t * self.policy_dt
@@ -628,7 +625,7 @@ class Runner:
                     )
 
             # physics
-            eff_sum = np.zeros(n)
+            eff_first = None
             for s in range(b.substeps):
                 tnow = time + s * b.timestep
                 d.xfrc_applied[:] = 0.0
@@ -647,11 +644,12 @@ class Runner:
                 tau_sq += tau * tau
                 tau_peak = np.maximum(tau_peak, np.abs(tau))
                 sat += np.abs(tau) >= b.limit - 1e-6
-                eff_sum += tau
+                if eff_first is None:
+                    eff_first = tau.copy()  # from the state the observation saw
                 qd_peak = np.maximum(qd_peak, np.abs(d.qvel[b.dadr]))
                 nphys += 1
             if log is not None:
-                log["effort"].append(eff_sum / b.substeps)
+                log["effort"].append(eff_first)
 
             r = quat_to_mat(d.qpos[q0 + 3 : q0 + 7][None])[0]
             vb = r.T @ d.qvel[v0 : v0 + 3]

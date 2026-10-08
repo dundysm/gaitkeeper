@@ -168,17 +168,39 @@ def velocity_commands(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.nd
     return s.command[:, :3].copy()
 
 
+def _accumulated_phase(steps: np.ndarray, policy_dt: float, period: float) -> np.ndarray:
+    """Phase from a float32 accumulator advanced by dt/period each step, as the
+    Unitree deploy runtime keeps it (observations.h gait_phase)."""
+    f = np.float32
+    delta = f(policy_dt) * (f(1.0) / f(period))
+    n = int(steps.max()) + 1 if steps.size else 1
+    seq = np.empty(n, dtype=f)
+    g = f(0.0)
+    for i in range(n):
+        seq[i] = g
+        g = f(np.fmod(f(g + delta), f(1.0)))
+    return seq[steps].astype(np.float64)
+
+
 def gait_phase(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
     period = float(p["period"])
-    if p.get("arithmetic", "float32") == "float32":
+    # clock_offset_steps: the phase clock runs this many policy steps ahead of the
+    # episode counter (2 in the Unitree deploy runtime, 0 in training).
+    k = s.episode_step.astype(np.int64) + int(p.get("clock_offset_steps", 0))
+    arith = p.get("arithmetic", "float32")
+    if arith == "float32":
         # The reference evaluates (step * dt) % period / period * pi * 2 in float32;
         # at 20 s the argument's rounding alone is about 2e-5, so mirror it.
         f = np.float32
-        t32 = s.episode_step.astype(f) * f(ctx.policy_dt)
+        t32 = k.astype(f) * f(ctx.policy_dt)
         arg = (np.fmod(t32, f(period)) / f(period)) * f(np.pi) * f(2.0)
         out = np.stack([np.sin(arg), np.cos(arg)], axis=1).astype(np.float64)
+    elif arith == "float32_accumulate":
+        g = _accumulated_phase(k, ctx.policy_dt, period)
+        out = np.stack([np.sin(g * 2 * np.pi), np.cos(g * 2 * np.pi)], axis=1)
+        out = out.astype(np.float32).astype(np.float64)
     else:
-        ph = np.mod(s.episode_step.astype(np.float64) * ctx.policy_dt, period) / period
+        ph = np.mod(k.astype(np.float64) * ctx.policy_dt, period) / period
         out = np.stack([np.sin(2 * np.pi * ph), np.cos(2 * np.pi * ph)], axis=1)
     thr = p.get("stand_threshold")
     if thr is not None:
@@ -333,3 +355,62 @@ def build_observation(
     values = term_values(s, terms, ctx)
     obs, _ = assemble(values, terms, s.reset, group.get("history", {}))
     return obs, values, term_slices(terms, group.get("history", {}))
+
+
+class ObservationBuilder:
+    """Build the policy input one step at a time, as a closed loop needs it.
+
+    Gives the same vectors as ``build_observation`` over a whole trace (tested).
+    """
+
+    def __init__(self, contract: Any):
+        group = contract.get("policy_io.observation_groups.policy")
+        self.terms = group["terms"]
+        self.history = dict(group.get("history", {}) or {})
+        self.length = int(self.history.get("length", 1))
+        self.ctx = context_from_contract(contract)
+        self.buffers: dict[str, np.ndarray] = {}
+
+    def step(
+        self,
+        root_quat: np.ndarray,
+        ang_vel_body: np.ndarray,
+        joint_pos: np.ndarray,
+        joint_vel: np.ndarray,
+        joint_names: list[str],
+        command: np.ndarray,
+        episode_step: int,
+        prev_action: np.ndarray,
+    ) -> np.ndarray:
+        reset = episode_step == 0
+        s = RawState(
+            root_quat=np.asarray(root_quat, dtype=np.float64)[None],
+            ang_vel_body=np.asarray(ang_vel_body, dtype=np.float64)[None],
+            joint_pos=np.asarray(joint_pos, dtype=np.float64)[None],
+            joint_vel=np.asarray(joint_vel, dtype=np.float64)[None],
+            joint_names=joint_names,
+            command=np.asarray(command, dtype=np.float64)[None],
+            episode_step=np.array([episode_step]),
+            reset=np.array([reset]),
+            prev_action=(np.zeros_like(prev_action) if reset else np.asarray(prev_action))[None],
+        )
+        values = term_values(s, self.terms, self.ctx)
+        init = self.history.get("init", "repeat_first")
+        for t in self.terms:
+            x = values[t["id"]][0]
+            buf = self.buffers.get(t["id"])
+            if reset or buf is None:
+                buf = np.repeat(x[None], self.length, axis=0)
+                if init == "zeros":
+                    buf[:-1] = 0.0
+            else:
+                buf = np.roll(buf, -1, axis=0)
+                buf[-1] = x
+            self.buffers[t["id"]] = buf
+        order = self.history.get("order", "oldest_first")
+        win = {k: (b if order == "oldest_first" else b[::-1]) for k, b in self.buffers.items()}
+        if self.history.get("layout", "term_major") == "term_major":
+            parts = [win[t["id"]].reshape(-1) for t in self.terms]
+        else:
+            parts = [win[t["id"]][k] for k in range(self.length) for t in self.terms]
+        return np.concatenate(parts)

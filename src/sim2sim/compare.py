@@ -294,7 +294,10 @@ def check_b(trace: Trace, policy: Any) -> BoundaryResult:
         return BoundaryResult(
             "B", "not_checked", notes=[f"policy takes {policy.n_in} inputs, log has {obs.shape[1]}"]
         )
-    a = policy(obs)
+    if getattr(policy, "is_recurrent", False) and "reset" in trace.arrays:
+        a = policy(obs, reset=trace["reset"])
+    else:
+        a = policy(obs)
     rec = trace["action"].astype(np.float64)
     err = np.abs(a - rec)
     tol = EXACT_REL * np.maximum(1.0, np.abs(rec))

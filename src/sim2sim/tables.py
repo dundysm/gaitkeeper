@@ -22,9 +22,29 @@ G1_29_ISAAC_IDS = [0, 6, 12, 1, 7, 13, 2, 8, 14, 3, 9, 15, 22, 4, 10, 16, 23, 5,
                    17, 24, 18, 25, 19, 26, 20, 27, 21, 28]  # fmt: skip
 G1_29_ISAAC = [G1_29_SDK[i] for i in G1_29_ISAAC_IDS]
 
+# Unitree H1 SDK motor order (unitree_rl_lab assets/robots/unitree.py UNITREE_H1_CFG
+# joint_sdk_names at 4960b84). Slot 9 is unused on H1 and has no joint.
+H1_SDK = [
+    "right_hip_roll_joint", "right_hip_pitch_joint", "right_knee_joint",
+    "left_hip_roll_joint", "left_hip_pitch_joint", "left_knee_joint",
+    "torso_joint", "left_hip_yaw_joint", "right_hip_yaw_joint", "",
+    "left_ankle_joint", "right_ankle_joint",
+    "right_shoulder_pitch_joint", "right_shoulder_roll_joint", "right_shoulder_yaw_joint",
+    "right_elbow_joint",
+    "left_shoulder_pitch_joint", "left_shoulder_roll_joint", "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+]  # fmt: skip
+
 TABLES: dict[str, list[str]] = {
     "unitree_g1_29dof_sdk": G1_29_SDK,
     "unitree_g1_29dof_isaac_bfs@unitree_rl_lab:4960b84": G1_29_ISAAC,
+}
+
+# SDK motor tables by robot, as used by the Unitree deploy reader (joint_ids_map
+# holds indices into these).
+SDK_TABLES: dict[str, tuple[str, list[str]]] = {
+    "unitree_g1_29dof": ("unitree_g1_29dof_sdk@unitree_rl_lab:4960b84", G1_29_SDK),
+    "unitree_h1": ("unitree_h1_sdk@unitree_rl_lab:4960b84", H1_SDK),
 }
 
 

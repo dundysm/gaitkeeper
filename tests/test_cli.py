@@ -22,7 +22,10 @@ def test_verify_exit_codes(tmp_path, clean_log, files, harness):
     bad = clean_log.slice_steps(0, clean_log.n_steps)
     bad.arrays["target"] = bad["target"] - np.float32(0.1)
     bad.save(tmp_path / "bad.npz")
-    assert main(["verify", str(tmp_path / "bad.npz"), "--contract", str(tmp_path / "c.yaml")]) == 2
+    # Plan section 4: CONTRACT exits 1, INVALID_INPUT 2.
+    assert main(["verify", str(tmp_path / "bad.npz"), "--contract", str(tmp_path / "c.yaml")]) == 1
+    (tmp_path / "junk.npz").write_bytes(b"not a trace")
+    assert main(["verify", str(tmp_path / "junk.npz"), "--contract", str(tmp_path / "c.yaml")]) == 2
     assert (tmp_path / "r.json").exists()
 
 

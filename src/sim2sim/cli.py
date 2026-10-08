@@ -1,4 +1,9 @@
-"""Command line: read a contract, verify a trace, run, check, map the envelope, report deploy deviations."""
+"""Command line: read a contract, verify a trace, run, check, map the envelope, report deploy deviations.
+
+Exit codes follow plan section 4 wherever a verdict is given: PASS 0, CONTRACT 1,
+INVALID_INPUT 2, PHYSICS 3, POLICY_UNDER_TASK 4, UNDETERMINED 5, UNSUPPORTED 6.
+L1 findings without a verdict exit 0 when the gate passes and 5 when it fails.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,6 @@ import json
 import sys
 from pathlib import Path
 
-from .compare import verify
 from .contract import Contract
 from .trace import Trace
 
@@ -248,7 +252,14 @@ def cmd_inspect(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    trace = Trace.load(args.trace)
+    from .diagnose import diagnose_trace
+    from .task import TaskSpec
+
+    try:
+        trace = Trace.load(args.trace)
+    except (OSError, ValueError) as e:
+        print(f"INVALID_INPUT: {e}")
+        return 2
     contract = _contract(args)
     policy = None
     pol_path = args.policy or args.onnx
@@ -256,32 +267,123 @@ def cmd_verify(args: argparse.Namespace) -> int:
         from .policy import OnnxPolicy
 
         policy = OnnxPolicy(pol_path)
-    rep = verify(trace, contract, policy)
-    print(rep.summary())
+    task = None
+    if args.task_schedule:
+        from .runner import load_schedule
+
+        sched = load_schedule(args.task_schedule)
+        task = TaskSpec(
+            Path(args.task_schedule).stem, args.task_seconds or sched[-1][0] + 5.0, sched
+        )
+    dg = diagnose_trace(
+        trace,
+        contract,
+        policy,
+        onnx=pol_path,
+        target=args.mjcf,
+        seeds=tuple(range(1, args.seeds + 1)),
+        run_counterfactual=not args.no_counterfactual,
+        task=task,
+        workers=args.workers,
+    )
+    print("\n".join(dg.lines()))
+    if args.json:
+        rep = dg.report
+        out = dg.to_json()
+        out.update(
+            {
+                "verdict": dg.decision.verdict,
+                "evidence": dg.decision.evidence,
+                "label": rep.label if rep else None,
+                "findings": rep.findings if rep else [],
+                "excitation": rep.excitation if rep else [],
+                "boundaries": {
+                    k: {
+                        "status": b.status,
+                        "patterns": b.patterns,
+                        "notes": b.notes,
+                        "terms": [t.__dict__ for t in b.terms],
+                    }
+                    for k, b in (rep.boundaries.items() if rep else [])
+                },
+            }
+        )
+        Path(args.json).write_text(json.dumps(out, indent=1, default=str))
+    return dg.decision.exit_code
+
+
+def cmd_residual(args: argparse.Namespace) -> int:
+    from .residual import dynamics_residual
+
+    trace = Trace.load(args.trace)
+    contract = _contract(args)
+    d = dynamics_residual(trace, contract, args.mjcf, fits=args.fits)
+    print("\n".join(d.lines()))
+    if args.json:
+        Path(args.json).write_text(json.dumps(d.to_json(), indent=1, default=str))
+    return 0
+
+
+def cmd_task(args: argparse.Namespace) -> int:
+    from .diagnose import diagnose_task
+    from .runner import Push, PushGenerator, load_schedule
+    from .task import TaskSpec
+
+    c = _contract(args)
+    path = args.policy or args.onnx
+    if not path:
+        sys.exit("give --policy (or --onnx)")
+    sched = load_schedule(args.schedule)
+    pushes = []
+    for p in args.push or []:
+        f = p.split(",")
+        pushes.append(
+            Push(
+                float(f[0]),
+                "force",
+                (float(f[1]), float(f[2]), float(f[3])),
+                f[4] if len(f) > 4 else None,
+                float(f[5]) if len(f) > 5 else 0.1,
+            )
+        )
+    gen = None
+    if args.push_every:
+        gen = PushGenerator(
+            every_s=args.push_every,
+            first_s=args.push_first,
+            force=args.push_force,
+            fixed=True,
+            duration=args.push_duration,
+            body=args.push_body,
+            direction="horizontal",
+        )
+    spec = TaskSpec(
+        args.name or Path(args.schedule).stem,
+        args.seconds or sched[-1][0] + 5.0,
+        sched,
+        pushes,
+        gen,
+        args.hold.split(",") if args.hold else None,
+        args.unowned_obs,
+    )
+    from .behavior import contract_header
+
+    print(contract_header(c))
+    dg = diagnose_task(
+        c, args.mjcf, path, spec, tuple(range(1, args.seeds + 1)), args.backend, args.workers
+    )
+    env = dg.envelope
+    print("\n".join(env.lines()))
+    print("\n".join(dg.lines()))
     if args.json:
         Path(args.json).write_text(
             json.dumps(
-                {
-                    "verdict": rep.verdict,
-                    "evidence": rep.evidence,
-                    "label": rep.label,
-                    "findings": rep.findings,
-                    "excitation": rep.excitation,
-                    "boundaries": {
-                        k: {
-                            "status": b.status,
-                            "patterns": b.patterns,
-                            "notes": b.notes,
-                            "terms": [t.__dict__ for t in b.terms],
-                        }
-                        for k, b in rep.boundaries.items()
-                    },
-                },
+                {"command": "task", **dg.to_json(), "scenarios": env.scenarios},
                 indent=1,
                 default=str,
             )
         )
-    return {"PASS": 0, "UNDETERMINED": 3, "CONTRACT": 2}.get(rep.verdict, 1)
+    return dg.decision.exit_code
 
 
 def cmd_infer(args: argparse.Namespace) -> int:
@@ -310,7 +412,10 @@ def main(argv: list[str] | None = None) -> int:
         contract_args(p)
         p.add_argument("--mjcf", required=True, help="target MJCF scene")
         p.add_argument("--policy", help="policy file (defaults to --onnx)")
-        p.add_argument("--backend", choices=["native_implicit", "explicit_zoh", "python_pd"])
+        p.add_argument(
+            "--backend",
+            choices=["native_implicit", "explicit_zoh", "python_pd", "standin_implicit"],
+        )
         p.add_argument("--json")
 
     p = sub.add_parser("inspect", help="read a contract from exported files")
@@ -318,12 +423,45 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out")
     p.set_defaults(fn=cmd_inspect)
 
-    p = sub.add_parser("verify", help="check boundaries B, A, C of a trace against a contract")
+    p = sub.add_parser(
+        "verify", help="boundaries B, A, C of a trace, then D and the closed loop with --mjcf"
+    )
     p.add_argument("trace", help="golden trace directory or harness log .npz")
     contract_args(p)
     p.add_argument("--policy", help="policy file for boundary B (defaults to --onnx)")
+    p.add_argument("--mjcf", help="target model: adds D, the closed loop and the counterfactual")
+    p.add_argument("--seeds", type=int, default=12, help="seeded starts for the closed loop")
+    p.add_argument("--no-counterfactual", action="store_true")
+    p.add_argument("--task-schedule", help="a requested task: command schedule run on the target")
+    p.add_argument("--task-seconds", type=float)
+    p.add_argument("--workers", type=int)
     p.add_argument("--json")
     p.set_defaults(fn=cmd_verify)
+
+    p = sub.add_parser("residual", help="boundary D only: the dynamics residual of a trace")
+    p.add_argument("trace", help="golden trace directory with physics-rate channels")
+    contract_args(p)
+    p.add_argument("--mjcf", required=True, help="analysis target (MJCF, .mjb or trace directory)")
+    p.add_argument("--fits", action="store_true", help="parameter fits (research)")
+    p.add_argument("--json")
+    p.set_defaults(fn=cmd_residual)
+
+    p = sub.add_parser("task", help="a requested task with no reference: L1 findings")
+    sim_args(p)
+    p.add_argument("--schedule", required=True, help="command schedule, YAML or CSV t,vx,vy,wz")
+    p.add_argument("--name")
+    p.add_argument("--seconds", type=float)
+    p.add_argument("--seeds", type=int, default=3)
+    p.add_argument("--hold", help="comma separated joints the policy does not own")
+    p.add_argument("--unowned-obs", choices=["real", "echo_action", "default"], default="real")
+    p.add_argument("--push", action="append", help="t,fx,fy,fz[,body[,duration]]")
+    p.add_argument("--push-every", type=float, help="horizontal pushes of fixed size every N s")
+    p.add_argument("--push-first", type=float, default=2.0)
+    p.add_argument("--push-force", type=float, default=0.0)
+    p.add_argument("--push-duration", type=float, default=0.1)
+    p.add_argument("--push-body", default="torso_link")
+    p.add_argument("--workers", type=int)
+    p.set_defaults(fn=cmd_task)
 
     p = sub.add_parser("infer", help="observation layout from a trace, abstaining when ambiguous")
     p.add_argument("trace", nargs="?", help="golden trace directory or harness log .npz")

@@ -284,6 +284,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return {"PASS": 0, "UNDETERMINED": 3, "CONTRACT": 2}.get(rep.verdict, 1)
 
 
+def cmd_infer(args: argparse.Namespace) -> int:
+    from .infer import infer
+
+    res = infer(Trace.load(args.trace), use_raw=not args.no_raw)
+    print("\n".join(res.lines()))
+    if args.json:
+        Path(args.json).write_text(json.dumps(res.to_json(), indent=1, default=str))
+    return 0 if res.status == "inferred" else 3
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="sim2sim")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -314,6 +324,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--policy", help="policy file for boundary B (defaults to --onnx)")
     p.add_argument("--json")
     p.set_defaults(fn=cmd_verify)
+
+    p = sub.add_parser("infer", help="observation layout from a trace, abstaining when ambiguous")
+    p.add_argument("trace", nargs="?", help="golden trace directory or harness log .npz")
+    p.add_argument("--trace", dest="trace_opt", help="same as the positional argument")
+    p.add_argument("--no-raw", action="store_true", help="use (obs, action) only")
+    p.add_argument("--json")
+    p.set_defaults(fn=cmd_infer)
 
     p = sub.add_parser("run", help="closed-loop run of a policy in a target MJCF")
     sim_args(p)
@@ -367,6 +384,10 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_deviation)
 
     args = ap.parse_args(argv)
+    if args.cmd == "infer":
+        args.trace = args.trace or args.trace_opt
+        if not args.trace:
+            ap.error("infer needs a trace")
     return args.fn(args)
 
 

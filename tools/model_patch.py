@@ -25,7 +25,9 @@ def main(path: str) -> None:
     xml = mujoco.MjModel.from_xml_path(str(p / "model_xml" / "scene.xml"))
     patch = model_patch(live, xml)
     (p / "model_patch.json").write_text(json.dumps(patch))
-    print(f"{p / 'model_patch.json'}: options {sorted(patch['opt'])}, {len(patch['fields'])} fields")
+    print(
+        f"{p / 'model_patch.json'}: options {sorted(patch['opt'])}, {len(patch['fields'])} fields"
+    )
 
 
 if __name__ == "__main__":

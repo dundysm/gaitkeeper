@@ -42,7 +42,9 @@ def main() -> None:
                 floor[k][n] = max(floor[k].get(n, 0.0), v)
         floor["root_force_rms"] = max(floor["root_force_rms"], old["root_force_rms"])
         floor["root_torque_rms"] = max(floor["root_torque_rms"], old["root_torque_rms"])
-        floor["analysis_mujoco"] = sorted(set(old["analysis_mujoco"]) | set(floor["analysis_mujoco"]))
+        floor["analysis_mujoco"] = sorted(
+            set(old["analysis_mujoco"]) | set(floor["analysis_mujoco"])
+        )
     floor["calibrated_on"] = [Path(p).name for p in floor["calibrated_on"]]
     data["engines"][key] = floor
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -158,6 +158,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_envelope(args: argparse.Namespace) -> int:
+    from .behavior import contract_header, probe
     from .envelope import sweep
 
     c = _contract(args)
@@ -165,14 +166,41 @@ def cmd_envelope(args: argparse.Namespace) -> int:
     if not path:
         sys.exit("give --policy (or --onnx)")
     env = sweep(c, args.mjcf, path, backend=args.backend, workers=args.workers)
-    print("\n".join(env.lines()))
+    pr = None
+    if not args.no_probes or args.physics:
+        pr = probe(
+            env,
+            c,
+            args.mjcf,
+            path,
+            backend=args.backend,
+            workers=args.workers,
+            pushes=not args.no_probes,
+            push_seeds=args.push_seeds,
+            physics=args.physics,
+        )
+        if args.no_probes:
+            pr.standstill, pr.kicks, pr.yaw_walk = [], [], None
+    lines = pr.lines() if pr else []
+    frag = []
+    if pr and pr.fragility:
+        i = next(k for k, ln in enumerate(lines) if ln.startswith("FRAGILITY"))
+        lines, frag = lines[:i], lines[i:]
+    print(contract_header(c))
+    print("\n".join(env.lines(middle=lines, tail=frag)))
     if args.json:
         Path(args.json).write_text(
             json.dumps(
                 {
+                    "command": "envelope",
+                    "evidence": "L1",
+                    "contract": contract_header(c),
+                    "controller": env.controller,
+                    "reference_range": env.ref_name,
                     "rows": env.rows,
                     "dead": env.dead,
                     "scenarios": env.scenarios,
+                    "probes": pr.to_json() if pr else None,
                     "findings": env.findings,
                 },
                 indent=1,
@@ -321,6 +349,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("envelope", help="command response map with dead zones and scenarios")
     sim_args(p)
     p.add_argument("--workers", type=int)
+    p.add_argument("--no-probes", action="store_true", help="skip standstill, kick and push probes")
+    p.add_argument("--push-seeds", type=int, default=10, help="seeds per push level (30 s runs)")
+    p.add_argument(
+        "--physics",
+        action="store_true",
+        help="fragility sweep: friction, contact softness, armature, kp scale, step size",
+    )
     p.set_defaults(fn=cmd_envelope)
 
     p = sub.add_parser("deviation", help="deploy values against training values, per joint")

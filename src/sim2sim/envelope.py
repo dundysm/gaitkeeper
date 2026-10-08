@@ -72,7 +72,9 @@ class Envelope:
             if ax != "wz_walk"
         }
 
-    def lines(self) -> list[str]:
+    def lines(self, middle: list[str] | None = None, tail: list[str] | None = None) -> list[str]:
+        """The report. ``middle`` goes after the dead zones and before the
+        findings (behavior probes), ``tail`` at the end (fragility)."""
         out = []
         if self.controller:
             out.extend(Runner.controller_text(self.controller))
@@ -97,12 +99,14 @@ class Envelope:
         for d in self.dead.values():
             if d["text"]:
                 out.append(f"DEAD ZONE  {d['text']}")
+        out.extend(middle or [])
         for f in self.findings:
             out.append(f"Finding   {f}")
         if self.scenarios:
             out.append("Scenarios (L1 bar over seeds " + ", ".join(map(str, SEEDS)) + "):")
             for s in self.scenarios:
                 out.append(f"  {s['name']:<22} {s['verdict']}  {s['detail']}")
+        out.extend(tail or [])
         return out
 
 

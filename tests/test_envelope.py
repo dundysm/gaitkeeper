@@ -42,7 +42,22 @@ def test_scenarios_stay_inside_reference_and_limit():
     env = Envelope(
         {"vx": ROWS}, {}, "trained", {"vx": [-1.0, 2.0]}, {"vx": [-0.5, 0.4]}, {"vx": [-1.0, 2.0]}
     )
-    assert _pick(env, "vx", 1, 1.0) == 0.22  # 0.5 tracks but is outside the limit
+    # 0.5 tracks but is outside the limit; 0.22 tracks but is the dead zone edge itself
+    assert _pick(env, "vx", 1, 1.0) is None
+    env.limit = {"vx": [-0.5, 0.6]}
+    assert _pick(env, "vx", 1, 1.0) == 0.5
+    assert _pick(env, "vx", -1, -0.5) == -0.3  # first tracked -0.2: -0.3 is clear of it
+
+
+def test_scenario_commands_stay_clear_of_the_dead_zone_edge():
+    """Near the edge tracking depends on seed and start (the #145 lateral case:
+    first tracked +0.28, limit 0.30): no lateral scenario rather than a coin flip."""
+    rows = [_row(0.25, 0.0), _row(0.28, 0.23), _row(0.3, 0.25)]
+    env = Envelope({"vx": rows}, {}, "trained", {}, {"vx": [-0.3, 0.3]}, None)
+    assert _pick(env, "vx", 1, 0.3) is None
+    env.limit = {"vx": [-0.5, 0.5]}
+    env.rows["vx"].append(_row(0.4, 0.35))
+    assert _pick(env, "vx", 1, 0.3) == 0.4
     g = grids({"vx": [-0.5, 1.0], "vy": [-0.3, 0.3], "wz": [-0.2, 0.2]})
     assert 0.2 in g["vx"] and 0.22 in g["vx"] and 1.0 in g["vx"] and -1.0 in g["vx"]
     assert 0.25 in g["vy"] and 0.28 in g["vy"] and 0.2 in g["wz"]

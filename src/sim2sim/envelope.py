@@ -23,6 +23,7 @@ from .contract import Contract
 from .runner import RunConfig, Runner, pool_context
 
 DEAD_RATIO = 0.2
+EDGE_MARGIN = 1.25  # a scenario command sits this far beyond the first tracked command
 SECONDS = 15.0
 L1_SPEED_RATIO = 0.5
 L1_DRIFT = 0.05
@@ -247,17 +248,25 @@ def _dead_text(key: str, d: dict[str, Any], ref: list[float] | None, stand: floa
 
 
 def _pick(env: Envelope, key: str, sign: int, target: float) -> float | None:
-    """A tracked command inside the reference and limit ranges, closest to target."""
+    """A tracked command inside the reference and limit ranges, closest to target,
+    and clear of the dead zone edge: at least ``EDGE_MARGIN`` times the first
+    tracked command on that side. Near the edge, tracking depends on the seed
+    and the start, so a command there tests the edge, not nominal function."""
     r = env.ref.get(AX_NAME[key]) if env.ref else None
+    tracked = [
+        row["cmd"][AX[key]]
+        for row in env.rows[key]
+        if sign * row["cmd"][AX[key]] > 0
+        and row["fell_at"] is None
+        and row["achieved"][AX[key]] * row["cmd"][AX[key]] > 0
+        and abs(row["achieved"][AX[key]]) >= DEAD_RATIO * abs(row["cmd"][AX[key]])
+    ]
+    if not tracked:
+        return None
+    first = min(abs(c) for c in tracked)
     best = None
-    for row in env.rows[key]:
-        c, a = row["cmd"][AX[key]], row["achieved"][AX[key]]
-        if (
-            sign * c <= 0
-            or row["fell_at"] is not None
-            or a * c <= 0
-            or abs(a) < DEAD_RATIO * abs(c)
-        ):
+    for c in tracked:
+        if abs(c) < EDGE_MARGIN * first - 1e-9:
             continue
         if r and not (r[0] - 1e-9 <= c <= r[1] + 1e-9):
             continue
@@ -311,7 +320,7 @@ def _scenarios(env: Envelope, ex: ProcessPoolExecutor, kw: dict[str, Any]) -> li
                     "name": name,
                     "cmd": None,
                     "verdict": "NONE",
-                    "detail": "no tracked command inside the reference range",
+                    "detail": "no tracked command clear of the dead zone edge inside the reference and limit ranges",
                 }
             )
             continue

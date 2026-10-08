@@ -218,6 +218,12 @@ def defects() -> list[Defect]:
 
         return h.standard(edit=edit)
 
+    def vel_unfilled(h: Harness) -> Trace:
+        def edit(v: dict[str, np.ndarray]) -> None:
+            v["joint_vel_rel"] = np.zeros_like(v["joint_vel_rel"])
+
+        return h.standard(edit=edit)
+
     def world_gyro(h: Harness) -> Trace:
         return h.standard(ctx=_ctx(h.ctx, imu_frame="world"))
 
@@ -412,6 +418,13 @@ def defects() -> list[Defect]:
         Defect("action remap skipped (Isaac order)", "C", "target", "remap skipped", action_remap),
         Defect(
             "joint velocity scaled 0.05", "A", "joint_vel_rel", "constant scale x0.05", vel_scale
+        ),
+        Defect(
+            "joint velocity never filled",
+            "A",
+            "joint_vel_rel",
+            "zero (term not filled)",
+            vel_unfilled,
         ),
         Defect(
             "action scale from deploy.yaml", "C", "target", "action scale from yaml", yaml_scale

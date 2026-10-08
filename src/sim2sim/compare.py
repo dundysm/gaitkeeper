@@ -228,7 +228,8 @@ def _generic_candidates(
     d = e.shape[1]
     cands: list[Candidate] = []
     s = _fit_scale(o, e, fit_rows, per_column=False)
-    if s is not None:
+    # A fitted scale of zero is the same explanation as an unfilled term (below).
+    if s is not None and abs(float(s)) > 1e-6:
         sv = float(s)
         name = "sign flip" if abs(sv + 1) < 1e-3 else f"constant scale x{sv:.4g}"
         cands.append(

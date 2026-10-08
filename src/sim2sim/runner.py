@@ -99,6 +99,7 @@ class RunConfig:
     model_edit: Callable[[mujoco.MjModel], None] | None = None
     tail_s: float = 5.0
     record: bool = False
+    contacts: bool = False  # log which bodies touch the world at every physics step
 
 
 def load_schedule(path: str | Path) -> list[tuple[float, tuple[float, float, float]]]:
@@ -151,6 +152,18 @@ _INTEGRATORS = {
     "rk4": mujoco.mjtIntegrator.mjINT_RK4,
 }
 _INTEGRATOR_NAMES = {int(v): k for k, v in _INTEGRATORS.items()}
+
+
+def ground_contacts(m: mujoco.MjModel, d: mujoco.MjData) -> np.ndarray:
+    """Bodies in contact with a geom of the world body, as a flag per body."""
+    out = np.zeros(m.nbody, dtype=bool)
+    if d.ncon:
+        b1 = m.geom_bodyid[d.contact.geom1[: d.ncon]]
+        b2 = m.geom_bodyid[d.contact.geom2[: d.ncon]]
+        out[b2[b1 == 0]] = True
+        out[b1[b2 == 0]] = True
+    out[0] = False
+    return out
 
 
 def model_torque_limits(
@@ -218,6 +231,9 @@ class RunResult:
     timestep: float
     seconds: float
     log: dict[str, np.ndarray] | None = None
+    dadr: np.ndarray | None = None  # qvel addresses of the policy joints
+    contacts: np.ndarray | None = None  # (physics steps, bodies) touching a world geom
+    body_names: list[str] | None = None
 
     @property
     def survived(self) -> bool:
@@ -546,6 +562,7 @@ class Runner:
             if cfg.record
             else None
         )
+        contacts: list[np.ndarray] | None = [] if cfg.contacts else None
         hinge_types = (int(mujoco.mjtJoint.mjJNT_HINGE), int(mujoco.mjtJoint.mjJNT_SLIDE))
         all_hinge = [j for j in range(m.njnt) if int(m.jnt_type[j]) in hinge_types]
 
@@ -648,6 +665,8 @@ class Runner:
                     eff_first = tau.copy()  # from the state the observation saw
                 qd_peak = np.maximum(qd_peak, np.abs(d.qvel[b.dadr]))
                 nphys += 1
+                if contacts is not None:
+                    contacts.append(ground_contacts(m, d))
             if log is not None:
                 log["effort"].append(eff_first)
 
@@ -693,7 +712,11 @@ class Runner:
             pushes=applied,
             timestep=b.timestep,
             seconds=(fell_at if fell_at is not None else steps * self.policy_dt),
+            dadr=b.dadr.copy(),
         )
+        if contacts is not None:
+            res.contacts = np.array(contacts, dtype=bool).reshape(len(contacts), m.nbody)
+            res.body_names = [m.body(i).name for i in range(m.nbody)]
         if log is not None:
             res.log = {k: np.asarray(v) for k, v in log.items()}
             res.log["reset"] = np.arange(len(log["obs"])) == 0

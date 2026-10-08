@@ -28,6 +28,23 @@ DEFAULT_SCHEDULE: list[tuple[float, float, float, float]] = [
 ]
 
 
+# (start_s, duration_s, body, (fx, fy, fz) in N, world frame). Pushes load the
+# legs past what walking needs so that a torque limit is reached (plan 7.6).
+DEFAULT_PUSHES: list[tuple[float, float, str, tuple[float, float, float]]] = [
+    (7.5, 0.15, "torso_link", (0.0, 300.0, 0.0)),  # sideways while walking at 0.5 m/s
+    (25.5, 0.15, "torso_link", (-300.0, 0.0, 0.0)),  # backward while walking forward and turning
+]
+
+
+def push_at(
+    pushes: list[tuple[float, float, str, tuple[float, float, float]]], t: float
+) -> tuple[str, np.ndarray] | None:
+    for start, dur, body, f in pushes:
+        if start - 1e-9 <= t < start + dur - 1e-9:
+            return body, np.asarray(f, dtype=np.float64)
+    return None
+
+
 def command_at(schedule: list[tuple[float, float, float, float]], t: float) -> np.ndarray:
     row = schedule[0]
     for r in schedule:

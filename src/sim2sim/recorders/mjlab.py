@@ -26,7 +26,7 @@ import numpy as np
 from ..contract import SCHEMA, Contract, sha256_file
 from ..terms import StateLayout
 from ..trace import Trace, check_state_increments
-from .schedule import DEFAULT_SCHEDULE, command_at, excitation_checklist
+from .schedule import DEFAULT_PUSHES, DEFAULT_SCHEDULE, command_at, excitation_checklist, push_at
 
 INTEGRATORS = {0: "mujoco_euler", 1: "mujoco_rk4", 2: "mujoco_implicit", 3: "mujoco_implicitfast"}
 
@@ -447,8 +447,27 @@ def record(args: argparse.Namespace) -> Path:
     }
     state = {"k": 0, "s": 0}
     orig_step = env.sim.step
+    pushes = [] if args.no_pushes else DEFAULT_PUSHES
+    push_body = {
+        b: next(
+            i
+            for i in range(m.nbody)
+            if _strip(mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, i) or "") == b
+        )
+        for b in {p[2] for p in pushes}
+    }
+    P["xfrc"] = []
 
     def step_hook() -> None:
+        # Scheduled pushes: a world-frame force on a body, set before each physics step.
+        t_now = state["k"] * env.step_dt + state["s"] * float(m.opt.timestep)
+        push = push_at(pushes, t_now)
+        d.xfrc_applied[0].zero_()
+        if push is not None:
+            d.xfrc_applied[0, push_body[push[0]], :3] = torch.as_tensor(
+                push[1], dtype=d.xfrc_applied.dtype
+            )
+        P["xfrc"].append(np.array(push[1] if push is not None else np.zeros(3)))
         P["qpos"].append(_np(d.qpos))
         P["qvel"].append(_np(d.qvel))
         P["ctrl"].append(_np(d.ctrl)[a_of_joint])
@@ -601,6 +620,7 @@ def record(args: argparse.Namespace) -> Path:
         "physics_rows": "state before each mj_step; effort and qacc from that step",
         "recording_changes": changes,
         "schedule": DEFAULT_SCHEDULE,
+        "pushes": [list(p[:3]) + [list(p[3])] for p in pushes],
         "state_check": sc.__dict__,
         "obs_state_matches_last_substep_max_abs": gap,
         "excitation": [e.__dict__ for e in exc],
@@ -651,6 +671,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--seconds", type=float, default=36.0)
     ap.add_argument("--episode-s", type=float, default=20.0)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--no-pushes", action="store_true", help="leave out the scheduled pushes")
     record(ap.parse_args(argv))
 
 

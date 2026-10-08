@@ -137,7 +137,11 @@ def diagnose_trace(
     dg.d = dynamics_residual(trace, contract, tmodel)
     del tmodel
     ev.d, ev.d_chains = dg.d.status, dg.d.above_chains
-    source = trace.path if trace.path and (Path(trace.path) / "model_xml").exists() else None
+    source = (
+        trace.path
+        if trace.path and any((Path(trace.path) / f).exists() for f in ("model.mjb", "model_xml"))
+        else None
+    )
     if onnx and trace.meta.get("schedule"):
         if source and run_counterfactual:
             dg.cf = counterfactual(

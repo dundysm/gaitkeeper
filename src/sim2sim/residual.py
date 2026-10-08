@@ -429,14 +429,14 @@ class DResult:
             f"{head} (source engine {self.engine})" + (f": {self.reason}" if self.reason else "")
         ]
         for c, v in self.chains.items():
-            fl = "uncalibrated" if v["ratio"] is None else f"{v['ratio']:.1f}x floor"
+            fl = "uncalibrated" if v["ratio"] is None else f"{v['ratio']:.3g}x floor"
             out.append(
                 f"  {c:<10} worst {v['worst']:<28} clean RMS {v['rms']:.4g} N m ({fl})"
                 + ("  ABOVE" if v["above"] else "")
             )
         if self.root:
             r = self.root
-            fl = "" if r.get("ratio") is None else f" ({r['ratio']:.1f}x floor)"
+            fl = "" if r.get("ratio") is None else f" ({r['ratio']:.3g}x floor)"
             out.append(
                 f"  root       RMS force {r['force_rms']:.4g} N, torque {r['torque_rms']:.4g} N m{fl}"
                 + ("  ABOVE" if r.get("above") else "")

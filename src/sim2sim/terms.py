@@ -1,0 +1,335 @@
+"""Observation term library.
+
+Each term is rebuilt from raw simulator state and the contract, never from the
+values a harness derived itself. Arrays are vectorized over steps (leading
+axis T). Quaternions are (w, x, y, z).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+
+GRAVITY_W = np.array([0.0, 0.0, -1.0])
+
+
+# -- rotation helpers ---------------------------------------------------------
+
+
+def quat_to_mat(q: np.ndarray) -> np.ndarray:
+    """(..., 4) wxyz unit quaternions to (..., 3, 3) rotation matrices (body to world)."""
+    q = np.asarray(q, dtype=np.float64)
+    q = q / np.linalg.norm(q, axis=-1, keepdims=True)
+    w, x, y, z = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
+    r = np.empty(q.shape[:-1] + (3, 3))
+    r[..., 0, 0] = 1 - 2 * (y * y + z * z)
+    r[..., 0, 1] = 2 * (x * y - w * z)
+    r[..., 0, 2] = 2 * (x * z + w * y)
+    r[..., 1, 0] = 2 * (x * y + w * z)
+    r[..., 1, 1] = 1 - 2 * (x * x + z * z)
+    r[..., 1, 2] = 2 * (y * z - w * x)
+    r[..., 2, 0] = 2 * (x * z - w * y)
+    r[..., 2, 1] = 2 * (y * z + w * x)
+    r[..., 2, 2] = 1 - 2 * (x * x + y * y)
+    return r
+
+
+def yaw_of(q: np.ndarray) -> np.ndarray:
+    r = quat_to_mat(q)
+    return np.arctan2(r[..., 1, 0], r[..., 0, 0])
+
+
+# -- raw state ----------------------------------------------------------------
+
+
+@dataclass
+class StateLayout:
+    """How the simulator's generalized state is laid out (from the trace, not the contract)."""
+
+    joint_names: list[str]  # hinge joints in qpos order after the free joint
+    free_joint: bool = True
+    quat_order: str = "wxyz"
+    ang_vel_frame: str = "body"  # frame of qvel[3:6]; MuJoCo free joints use the body frame
+    lin_vel_frame: str = "world"
+
+    @classmethod
+    def from_meta(cls, meta: dict[str, Any]) -> StateLayout:
+        s = meta["state_layout"]
+        return cls(
+            joint_names=list(s["joint_names"]),
+            free_joint=s.get("free_joint", True),
+            quat_order=s.get("quat_order", "wxyz"),
+            ang_vel_frame=s.get("ang_vel_frame", "body"),
+            lin_vel_frame=s.get("lin_vel_frame", "world"),
+        )
+
+    def to_meta(self) -> dict[str, Any]:
+        return {
+            "joint_names": list(self.joint_names),
+            "free_joint": self.free_joint,
+            "quat_order": self.quat_order,
+            "ang_vel_frame": self.ang_vel_frame,
+            "lin_vel_frame": self.lin_vel_frame,
+        }
+
+
+@dataclass
+class RawState:
+    """Named raw state over T steps at the instants observations were built."""
+
+    root_quat: np.ndarray  # (T, 4) wxyz
+    ang_vel_body: np.ndarray  # (T, 3) root angular velocity, root body frame
+    joint_pos: np.ndarray  # (T, J) in layout.joint_names order
+    joint_vel: np.ndarray  # (T, J)
+    joint_names: list[str]
+    command: np.ndarray  # (T, 3)
+    episode_step: np.ndarray  # (T,) steps since the last reset
+    reset: np.ndarray  # (T,) True when the observation follows a reset
+    prev_action: np.ndarray  # (T, A) previous raw policy output (zeros after reset)
+    action: np.ndarray | None = None  # (T, A) raw policy output at each step, when known
+
+    @classmethod
+    def from_arrays(
+        cls,
+        qpos: np.ndarray,
+        qvel: np.ndarray,
+        layout: StateLayout,
+        command: np.ndarray,
+        episode_step: np.ndarray,
+        reset: np.ndarray,
+        action: np.ndarray,
+    ) -> RawState:
+        qpos = np.asarray(qpos, dtype=np.float64)
+        qvel = np.asarray(qvel, dtype=np.float64)
+        if not layout.free_joint:
+            raise ValueError("fixed-base layouts are not supported")
+        quat = qpos[:, 3:7]
+        if layout.quat_order == "xyzw":
+            quat = quat[:, [3, 0, 1, 2]]
+        w = qvel[:, 3:6]
+        if layout.ang_vel_frame == "world":
+            w = np.einsum("tji,tj->ti", quat_to_mat(quat), w)
+        reset = np.asarray(reset, dtype=bool)
+        action = np.asarray(action, dtype=np.float64)
+        prev = np.zeros_like(action)
+        prev[1:] = action[:-1]
+        prev[reset] = 0.0
+        return cls(
+            root_quat=quat,
+            ang_vel_body=w,
+            joint_pos=qpos[:, 7:],
+            joint_vel=qvel[:, 6:],
+            joint_names=list(layout.joint_names),
+            command=np.asarray(command, dtype=np.float64),
+            episode_step=np.asarray(episode_step),
+            reset=reset,
+            prev_action=prev,
+            action=action,
+        )
+
+    def joint_index(self, names: list[str]) -> np.ndarray:
+        idx = {n: i for i, n in enumerate(self.joint_names)}
+        missing = [n for n in names if n not in idx]
+        if missing:
+            raise KeyError(f"joints not in the simulator state: {missing}")
+        return np.array([idx[n] for n in names])
+
+
+# -- terms ----------------------------------------------------------------------
+
+TermFn = Callable[[RawState, dict[str, Any], "TermContext"], np.ndarray]
+
+
+@dataclass
+class TermContext:
+    joint_names: list[str]  # policy joint order
+    default_joint_pos: np.ndarray  # policy order
+    policy_dt: float
+    imu_rotation_in_root: np.ndarray = field(default_factory=lambda: np.array([1.0, 0, 0, 0]))
+    imu_frame: str = "body"
+
+
+def base_ang_vel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    if ctx.imu_frame == "world":
+        return np.einsum("tij,tj->ti", quat_to_mat(s.root_quat), s.ang_vel_body)
+    r_imu = quat_to_mat(np.asarray(ctx.imu_rotation_in_root)[None])[0]
+    return s.ang_vel_body @ r_imu  # r_imu^T w for each row
+
+
+def projected_gravity(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    r = quat_to_mat(s.root_quat)
+    return np.einsum("tji,j->ti", r, GRAVITY_W)
+
+
+def velocity_commands(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    return s.command[:, :3].copy()
+
+
+def gait_phase(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    period = float(p["period"])
+    if p.get("arithmetic", "float32") == "float32":
+        # The reference evaluates (step * dt) % period / period * pi * 2 in float32;
+        # at 20 s the argument's rounding alone is about 2e-5, so mirror it.
+        f = np.float32
+        t32 = s.episode_step.astype(f) * f(ctx.policy_dt)
+        arg = (np.fmod(t32, f(period)) / f(period)) * f(np.pi) * f(2.0)
+        out = np.stack([np.sin(arg), np.cos(arg)], axis=1).astype(np.float64)
+    else:
+        ph = np.mod(s.episode_step.astype(np.float64) * ctx.policy_dt, period) / period
+        out = np.stack([np.sin(2 * np.pi * ph), np.cos(2 * np.pi * ph)], axis=1)
+    thr = p.get("stand_threshold")
+    if thr is not None:
+        out[np.linalg.norm(s.command[:, :3], axis=1) < float(thr)] = 0.0
+    return out
+
+
+def joint_pos_rel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    return s.joint_pos[:, s.joint_index(ctx.joint_names)] - ctx.default_joint_pos[None]
+
+
+def joint_vel_rel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    return s.joint_vel[:, s.joint_index(ctx.joint_names)].copy()
+
+
+def last_action(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    return s.prev_action.copy()
+
+
+TERMS: dict[str, TermFn] = {
+    "base_ang_vel": base_ang_vel,
+    "projected_gravity": projected_gravity,
+    "velocity_commands": velocity_commands,
+    "gait_phase": gait_phase,
+    "joint_pos_rel": joint_pos_rel,
+    "joint_vel_rel": joint_vel_rel,
+    "last_action": last_action,
+}
+
+
+# -- assembling an observation -----------------------------------------------------
+
+
+def apply_clip_scale(
+    x: np.ndarray, term: dict[str, Any], clip_then_scale: bool = True
+) -> np.ndarray:
+    clip = term.get("clip")
+    scale = np.asarray(term.get("scale", 1.0), dtype=np.float64)
+    if clip is not None and clip_then_scale:
+        x = np.clip(x, clip[0], clip[1])
+    x = x * scale
+    if clip is not None and not clip_then_scale:
+        x = np.clip(x, clip[0], clip[1])
+    return x
+
+
+def stack_history(
+    x: np.ndarray, reset: np.ndarray, length: int, init: str, order: str
+) -> np.ndarray:
+    """(T, d) per-step values to (T, length, d) history windows.
+
+    ``init`` says what fills the buffer at a reset: "repeat_first" (the first
+    value) or "zeros". ``order`` is "oldest_first" or "newest_first".
+    """
+    t_len, d = x.shape
+    out = np.empty((t_len, length, d))
+    buf = np.zeros((length, d))
+    for t in range(t_len):
+        if t == 0 or reset[t]:
+            buf[:] = x[t] if init == "repeat_first" else 0.0
+            if init == "zeros":
+                buf[-1] = x[t]
+        else:
+            buf = np.roll(buf, -1, axis=0)
+            buf[-1] = x[t]
+        out[t] = buf if order == "oldest_first" else buf[::-1]
+    return out
+
+
+def term_values(
+    s: RawState, terms: list[dict[str, Any]], ctx: TermContext
+) -> dict[str, np.ndarray]:
+    """Per-step value of each term after clip and scale, before history."""
+    out = {}
+    for term in terms:
+        fn = TERMS.get(term["id"])
+        if fn is None:
+            raise KeyError(f"no term '{term['id']}' in the library")
+        out[term["id"]] = apply_clip_scale(fn(s, term.get("params", {}), ctx), term)
+    return out
+
+
+def assemble(
+    values: dict[str, np.ndarray],
+    terms: list[dict[str, Any]],
+    reset: np.ndarray,
+    history: dict[str, Any],
+) -> tuple[np.ndarray, dict[str, slice]]:
+    """Concatenate terms into the policy input. Returns (obs, slice per term).
+
+    For term-major layout, each term's slice holds its whole history window.
+    For time-major layout, slices are not contiguous, so the returned slices
+    index the term-major view and the caller reorders through ``layout_index``.
+    """
+    length = int(history.get("length", 1))
+    init = history.get("init", "repeat_first")
+    order = history.get("order", "oldest_first")
+    layout = history.get("layout", "term_major")
+    windows = {t["id"]: stack_history(values[t["id"]], reset, length, init, order) for t in terms}
+    t_len = reset.shape[0]
+    if layout == "term_major":
+        parts = [windows[t["id"]].reshape(t_len, -1) for t in terms]
+    elif layout == "time_major":
+        parts = [windows[t["id"]][:, k, :] for k in range(length) for t in terms]
+    else:
+        raise ValueError(f"unknown history layout {layout!r}")
+    obs = np.concatenate(parts, axis=1)
+    return obs, term_slices(terms, history)
+
+
+def term_slices(terms: list[dict[str, Any]], history: dict[str, Any]) -> dict[str, np.ndarray]:
+    """Column indices of each term (all history slots) in the assembled observation."""
+    length = int(history.get("length", 1))
+    layout = history.get("layout", "term_major")
+    dims = [int(t["dim"]) for t in terms]
+    cols: dict[str, list[int]] = {t["id"]: [] for t in terms}
+    pos = 0
+    if layout == "term_major":
+        for t, d in zip(terms, dims):
+            cols[t["id"]] = list(range(pos, pos + d * length))
+            pos += d * length
+    else:
+        for _k in range(length):
+            for t, d in zip(terms, dims):
+                cols[t["id"]].extend(range(pos, pos + d))
+                pos += d
+    return {k: np.array(v) for k, v in cols.items()}
+
+
+def context_from_contract(contract: Any) -> TermContext:
+    names = contract.get("policy_io.joints.names")
+    default = contract.get("control.default_joint_pos")
+    imu = contract.get("policy_io.imu", {}) or {}
+    return TermContext(
+        joint_names=list(names),
+        default_joint_pos=np.array([default[n] for n in names], dtype=np.float64),
+        policy_dt=float(contract.get("timing.policy_dt")),
+        imu_rotation_in_root=np.asarray(
+            imu.get("rotation_in_root") or [1.0, 0, 0, 0], dtype=np.float64
+        ),
+        imu_frame=imu.get("frame", "body"),
+    )
+
+
+def build_observation(
+    s: RawState, contract: Any
+) -> tuple[np.ndarray, dict[str, np.ndarray], dict[str, np.ndarray]]:
+    """Rebuild the policy input from raw state. Returns (obs, per-term values, term columns)."""
+    group = contract.get("policy_io.observation_groups.policy")
+    terms = group["terms"]
+    ctx = context_from_contract(contract)
+    values = term_values(s, terms, ctx)
+    obs, _ = assemble(values, terms, s.reset, group.get("history", {}))
+    return obs, values, term_slices(terms, group.get("history", {}))

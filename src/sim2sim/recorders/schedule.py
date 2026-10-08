@@ -1,0 +1,116 @@
+"""Command schedules for golden traces, and the excitation checklist (plan 7.6)."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+# (start_s, vx, vy, wz). Each row holds until the next start.
+DEFAULT_SCHEDULE: list[tuple[float, float, float, float]] = [
+    (0.0, 0.0, 0.0, 0.0),  # stand, zero command
+    (1.5, 0.05, 0.0, 0.0),  # small commands, below the 0.1 stand threshold
+    (3.0, 0.0, 0.06, 0.0),
+    (4.5, 0.0, 0.0, 0.08),
+    (6.0, 0.5, 0.0, 0.0),
+    (9.0, 1.5, 0.0, 0.0),  # fast, to load the legs
+    (11.0, 0.0, 0.4, 0.0),
+    (13.0, 0.0, -0.4, 0.0),
+    (15.0, 0.0, 0.0, 0.5),  # in-place yaw
+    (17.5, 0.4, 0.0, 0.5),  # turn while walking, same direction
+    (20.0, 0.0, 0.0, 0.0),  # the episode resets near here (episode length 20 s)
+    (22.0, 0.15, 0.0, 0.0),  # small, above the stand threshold
+    (24.0, 0.6, 0.2, 0.4),
+    (27.0, 0.0, 0.0, 0.5),
+    (30.0, -0.4, 0.0, 0.0),
+    (32.0, 0.8, -0.3, 0.3),
+    (34.0, 0.0, 0.0, 0.0),
+]
+
+
+def command_at(schedule: list[tuple[float, float, float, float]], t: float) -> np.ndarray:
+    row = schedule[0]
+    for r in schedule:
+        if r[0] <= t + 1e-9:
+            row = r
+    return np.array(row[1:], dtype=np.float64)
+
+
+@dataclass
+class ExcitationItem:
+    name: str
+    ok: bool
+    value: str
+
+
+def excitation_checklist(
+    command: np.ndarray,
+    root_quat: np.ndarray,
+    ang_vel_body: np.ndarray,
+    reset: np.ndarray,
+    effort_at_limit_share: float | None,
+    stand_threshold: float = 0.1,
+    gyro_noise: float = 0.05,
+) -> list[ExcitationItem]:
+    """The items plan 7.6 requires before a trace is written."""
+    from ..terms import yaw_of
+
+    items = []
+    for i, ax in enumerate(("vx", "vy", "wz")):
+        vals = np.unique(np.round(command[:, i], 6))
+        items.append(
+            ExcitationItem(f"command {ax} changes", len(vals) >= 3, f"{len(vals)} distinct values")
+        )
+    norm = np.linalg.norm(command, axis=1)
+    small = (norm > 0) & (norm < stand_threshold)
+    items.append(
+        ExcitationItem(
+            "small commands inside the stand threshold",
+            bool(small.any()),
+            f"{int(small.sum())} steps",
+        )
+    )
+    in_place = (np.abs(command[:, 2]) > stand_threshold) & (
+        np.linalg.norm(command[:, :2], axis=1) == 0
+    )
+    items.append(
+        ExcitationItem("in-place yaw command", bool(in_place.any()), f"{int(in_place.sum())} steps")
+    )
+    yaw = np.unwrap(yaw_of(root_quat))
+    seg_span = 0.0
+    start = 0
+    for k in range(1, len(yaw) + 1):
+        if k == len(yaw) or reset[k]:
+            seg = yaw[start:k]
+            seg_span = max(seg_span, float(seg.max() - seg.min()) if len(seg) else 0.0)
+            start = k
+    items.append(
+        ExcitationItem(
+            "heading spans more than 90 degrees",
+            seg_span > np.pi / 2,
+            f"{np.degrees(seg_span):.0f} degrees within one episode",
+        )
+    )
+    rp = np.sqrt(np.mean(ang_vel_body[:, :2] ** 2, axis=0))
+    items.append(
+        ExcitationItem(
+            "roll and pitch rates above noise",
+            bool((rp > gyro_noise).all()),
+            f"rms roll {rp[0]:.3f}, pitch {rp[1]:.3f} rad/s",
+        )
+    )
+    n_reset = int(np.asarray(reset[1:], dtype=bool).sum())
+    items.append(
+        ExcitationItem("at least one reset inside the trace", n_reset >= 1, f"{n_reset} resets")
+    )
+    if effort_at_limit_share is None:
+        items.append(ExcitationItem("load touches a torque limit", False, "effort limits unknown"))
+    else:
+        items.append(
+            ExcitationItem(
+                "load touches a torque limit",
+                effort_at_limit_share > 0,
+                f"{effort_at_limit_share:.2%} of joint-steps at the limit",
+            )
+        )
+    return items

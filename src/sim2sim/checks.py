@@ -331,7 +331,7 @@ def s18_commands(
                 probs.append(f"{ax} {v:+.2f} outside {ref_name.split()[0]} {fmt_range(r)}")
             if dead_zones and ax in dead_zones and v != 0.0:
                 dz = dead_zones[ax]
-                if dz[0] < v < dz[1]:
+                if dz[0] <= v <= dz[1]:  # edges are the last ignored commands
                     probs.append(f"{ax} {v:+.2f} inside dead zone {fmt_range(dz)}")
         if probs:
             status = "FAIL"

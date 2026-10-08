@@ -28,6 +28,7 @@ def runner_trace(
     edit=None,
     backend: str = "native_implicit",
     seed: int = 0,
+    **cfg_kw,
 ) -> Trace:
     r = Runner(contract, str(model), OnnxPolicy(onnx))
     cfg = RunConfig(
@@ -38,6 +39,7 @@ def runner_trace(
         record=True,
         physics=True,
         model_edit=edit,
+        **cfg_kw,
     )
     res = r.run(cfg)
     assert res.survived, f"{backend} run fell at {res.fell_at}"

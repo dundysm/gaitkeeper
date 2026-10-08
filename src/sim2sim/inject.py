@@ -565,3 +565,87 @@ def judge(d: Defect, rep: Report) -> dict[str, Any]:
         "notes": {k: b.notes for k, b in rep.boundaries.items() if b.notes},
         "correct": bool(ok),
     }
+
+
+# -- physics changes for the target model (boundary D test cases) --------------------------------
+
+
+def _floor_friction(m: Any, mu: float) -> None:
+    m.geom_friction[:, 0] = mu
+
+
+def _armature(m: Any, value: float, joints: tuple[str, ...] = (), add: bool = False) -> None:
+    import mujoco
+
+    from .models import bare
+
+    for j in range(m.njnt):
+        if m.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE:
+            continue
+        if joints and not any(k in bare(m.joint(j).name) for k in joints):
+            continue
+        a = m.jnt_dofadr[j]
+        m.dof_armature[a] = m.dof_armature[a] + value if add else value
+
+
+def _body_mass(m: Any, body: str, delta: float) -> None:
+    import mujoco
+
+    from .models import find_id
+
+    m.body_mass[find_id(m, mujoco.mjtObj.mjOBJ_BODY, body)] += delta
+
+
+def _chain_change(
+    m: Any, joints: tuple[str, ...], armature: float, damping: float, limit: float
+) -> None:
+    """Armature, damping and effort limit changed together on some joints (AT11)."""
+    import mujoco
+
+    from .models import bare
+
+    act = {int(m.actuator_trnid[a, 0]): a for a in range(m.nu)}
+    for j in range(m.njnt):
+        if m.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE or not any(
+            k in bare(m.joint(j).name) for k in joints
+        ):
+            continue
+        a = m.jnt_dofadr[j]
+        m.dof_armature[a] += armature
+        m.dof_damping[a] += damping
+        if j in act:
+            m.actuator_forcerange[act[j]] *= limit
+
+
+def _frictionless(m: Any, timestep: float | None = None) -> None:
+    m.dof_frictionloss[:] = 0.0
+    m.dof_damping[6:] = 0.0
+    if timestep:
+        m.opt.timestep = timestep
+
+
+def _compose(m: Any, edits: tuple[Any, ...]) -> None:
+    for e in edits:
+        e(m)
+
+
+def physics_edit(kind: str, **kw: Any) -> Any:
+    """A picklable model edit: ``floor_friction`` (mu), ``armature`` (value, joints, add),
+    ``body_mass`` (body, delta), ``chain_change`` (joints, armature, damping, limit),
+    ``frictionless`` (timestep)."""
+    from functools import partial
+
+    fn = {
+        "floor_friction": _floor_friction,
+        "armature": _armature,
+        "body_mass": _body_mass,
+        "chain_change": _chain_change,
+        "frictionless": _frictionless,
+    }[kind]
+    return partial(fn, **kw)
+
+
+def compose(*edits: Any) -> Any:
+    from functools import partial
+
+    return partial(_compose, edits=tuple(edits))

@@ -50,6 +50,7 @@ FIT_MIN_ROWS = 200
 FIT_HELD_OUT_R2 = 0.5
 FIT_SPLIT_AGREE = 0.5  # halves must agree within this fraction of the larger dI
 CONFOUND_CORR = 0.9
+SEARCH_PASSES = 4
 ARMATURE_GRID = np.round(np.arange(-0.03, 0.0301, 0.001), 4)
 
 
@@ -632,56 +633,79 @@ def fit_joint(r: np.ndarray, a: np.ndarray, v: np.ndarray) -> dict[str, Any]:
     return out
 
 
-def armature_search(
-    an: Analysis, rows: Rows, se: Series, joints: list[int]
-) -> dict[int, dict[str, Any]]:
-    """Joint friction makes the inferred constraint force depend on inertia, so
-    the linear fit fails; search the analysis armature instead (plan 7.5)."""
+def _search_pass(
+    an: Analysis, rows: Rows, se: Series, joints: list[int], start: np.ndarray
+) -> dict[int, np.ndarray]:
+    """Cost per joint for every grid shift applied to all searched joints at once,
+    around the armature in ``start``."""
     m = an.model
-    base = m.dof_armature[an.dadr].copy()
     S = len(se.r)
     sel = np.flatnonzero(se.clean[:, joints].any(1))
     cost = {j: [] for j in joints}
     d = mujoco.MjData(m)
     aid = _actuator_of(m, an.jid)
+    for delta in ARMATURE_GRID:
+        if (start[joints] + delta <= 0).any():
+            for j in joints:
+                cost[j].append(math.inf)  # armature must stay positive
+            continue
+        for j in joints:
+            m.dof_armature[an.dadr[j]] = start[j] + delta
+        r = np.zeros((S, len(an.names)))
+        for s in sel:
+            d.qpos[:] = rows.qpos[s]
+            d.qvel[:] = rows.qvel[s]
+            d.qacc[:] = (rows.qvel[s + 1] - rows.qvel[s]) / rows.h
+            d.ctrl[aid] = rows.ctrl[s]
+            mujoco.mj_inverse(m, d)
+            q, v = rows.qpos[s, an.qadr], rows.qvel[s, an.dadr]
+            tau = np.clip(an.kp * (rows.ctrl[s] - q) - an.kd * v, -an.limit, an.limit)
+            r[s] = d.qfrc_inverse[an.dadr] - tau
+        for j in joints:
+            k = se.clean[:, j]
+            X = np.c_[se.v[k, j], np.ones(k.sum())]
+            co, *_ = np.linalg.lstsq(X, r[k, j], rcond=None)
+            cost[j].append(float(np.sqrt(np.mean((r[k, j] - X @ co) ** 2))))
+    return {j: np.array(c) for j, c in cost.items()}
+
+
+def armature_search(
+    an: Analysis, rows: Rows, se: Series, joints: list[int]
+) -> dict[int, dict[str, Any]]:
+    """Joint friction makes the inferred constraint force depend on inertia, so
+    the linear fit fails; search the analysis armature instead (plan 7.5).
+
+    The discrete inverse couples joints through the mass matrix, so a shift on
+    one joint moves the residual of the others a little. The search therefore
+    repeats around each joint's current best until no joint moves."""
+    m = an.model
+    base = m.dof_armature[an.dadr].copy()
+    cur = base.copy()
+    out: dict[int, dict[str, Any]] = {}
     try:
-        for delta in ARMATURE_GRID:
-            if (base[joints] + delta <= 0).any():
-                for j in joints:
-                    cost[j].append(math.inf)  # armature must stay positive
-                continue
+        for _ in range(SEARCH_PASSES):
+            cost = _search_pass(an, rows, se, joints, cur)
+            moved = False
+            nxt = cur.copy()
             for j in joints:
-                m.dof_armature[an.dadr[j]] = base[j] + delta
-            r = np.zeros((S, len(an.names)))
-            for s in sel:
-                d.qpos[:] = rows.qpos[s]
-                d.qvel[:] = rows.qvel[s]
-                d.qacc[:] = (rows.qvel[s + 1] - rows.qvel[s]) / rows.h
-                d.ctrl[aid] = rows.ctrl[s]
-                mujoco.mj_inverse(m, d)
-                q, v = rows.qpos[s, an.qadr], rows.qvel[s, an.dadr]
-                tau = np.clip(an.kp * (rows.ctrl[s] - q) - an.kd * v, -an.limit, an.limit)
-                r[s] = d.qfrc_inverse[an.dadr] - tau
-            for j in joints:
-                k = se.clean[:, j]
-                X = np.c_[se.v[k, j], np.ones(k.sum())]
-                co, *_ = np.linalg.lstsq(X, r[k, j], rcond=None)
-                cost[j].append(float(np.sqrt(np.mean((r[k, j] - X @ co) ** 2))))
+                c = cost[j]
+                ok = np.isfinite(c)
+                b = int(np.argmin(np.where(ok, c, np.inf)))
+                idx = np.flatnonzero(ok)
+                edge = min(c[idx[0]], c[idx[-1]])
+                nxt[j] = cur[j] + ARMATURE_GRID[b]
+                moved |= bool(ARMATURE_GRID[b] != 0)
+                out[j] = {
+                    "dI": float(base[j] - nxt[j]),
+                    "min_rms": float(c[b]),
+                    "sharpness": float(edge / c[b]) if c[b] > 0 else math.inf,
+                    "at_grid_edge": b in (int(idx[0]), int(idx[-1])),
+                }
+            cur = nxt
+            if not moved:
+                break
     finally:
         m.dof_armature[an.dadr] = base
-    out = {}
-    for j in joints:
-        c = np.array(cost[j])
-        ok = np.isfinite(c)
-        b = int(np.argmin(np.where(ok, c, np.inf)))
-        idx = np.flatnonzero(ok)
-        edge = min(c[idx[0]], c[idx[-1]])
-        out[j] = {
-            "dI": float(-ARMATURE_GRID[b]),
-            "min_rms": float(c[b]),
-            "sharpness": float(edge / c[b]) if c[b] > 0 else math.inf,
-            "at_grid_edge": b in (int(idx[0]), int(idx[-1])),
-        }
     return out
 
 

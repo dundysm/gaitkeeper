@@ -21,3 +21,17 @@ def need(*paths: Path) -> None:
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
         pytest.skip(f"missing {missing}")
+
+
+RUNS = Path(os.environ.get("SIM2SIM_RUNS", Path(__file__).parents[1] / "runs"))
+GOLDEN_A, GOLDEN_B, GOLDEN_C = (RUNS / f"g1_golden_{x}" for x in "abc")
+MJLAB_ONNX = (
+    Path(
+        os.environ.get(
+            "SIM2SIM_MJLAB_EXPORT",
+            "unitree_rl_mjlab/deploy/robots/g1/config/policy/velocity/v0",
+        )
+    )
+    / "exported"
+    / "policy.onnx"
+)

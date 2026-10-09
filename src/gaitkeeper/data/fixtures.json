@@ -4,7 +4,7 @@
   "g1_rl_lab": {
    "repo": "unitreerobotics/unitree_rl_lab",
    "about": "unitree_rl_lab G1 29 dof velocity policy as shipped (deploy.yaml, policy.onnx)",
-   "license": "no license file in the repository at this commit",
+   "license": "no LICENSE file at this commit; the README shows an Apache-2.0 badge",
    "commit": "4960b84732b0c2ec593dccbfe963fda1bcd7b1e3",
    "files": {
     "deploy.yaml": {
@@ -20,7 +20,7 @@
   "g1_rl_mjlab": {
    "repo": "unitreerobotics/unitree_rl_mjlab",
    "about": "unitree_rl_mjlab G1 velocity policy as shipped (deploy.yaml, policy.onnx)",
-   "license": "no license file in the repository at this commit",
+   "license": "no LICENSE file and no license statement at this commit",
    "commit": "1425b15f73bd4095f0df53709d7c389c3eb9e790",
    "files": {
     "deploy.yaml": {

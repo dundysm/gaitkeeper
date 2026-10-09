@@ -158,8 +158,9 @@ show that PhysX is one.
   M bugs caught".
 * Runner results assume the controller the contract describes. A field taken
   from no source is printed as `CONTROLLER_ASSUMED`.
-* The two Unitree policy repositories had no license file at the pinned
-  commits. `gaitkeeper fetch` says so and downloads them for local use. They
+* The two Unitree policy repositories have no LICENSE file at the pinned
+  commits (unitree_rl_lab's README shows an Apache-2.0 badge, unitree_rl_mjlab
+  states nothing). `gaitkeeper fetch` says so and downloads them for local use. They
   are not redistributed from this repository. unitree_mujoco and MuJoCo
   Menagerie are BSD-3-Clause.
 * The golden traces (about 126 MB each) are not published yet.

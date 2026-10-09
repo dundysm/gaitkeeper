@@ -213,8 +213,9 @@ gaitkeeper fetch          # list the sets and whether they are present
 gaitkeeper fetch all      # download every set
 ```
 
-The two policy repositories had no license file at those commits; the files
-are fetched for local use, not redistributed. The directory is
+The two policy repositories have no LICENSE file at those commits
+(unitree_rl_lab's README shows an Apache-2.0 badge; unitree_rl_mjlab states
+no license); the files are fetched for local use, not redistributed. The directory is
 `$GAITKEEPER_DATA` when set, else `~/.cache/gaitkeeper`.
 
 ## What has been measured

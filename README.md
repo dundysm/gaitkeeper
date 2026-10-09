@@ -222,7 +222,9 @@ no license); the files are fetched for local use, not redistributed. The directo
 
 The source engine for every attribution so far is mjlab 1.2.0 on mujoco_warp
 3.5.0. Nothing has been recorded in Isaac Lab or PhysX yet, so no Isaac source
-is calibrated and nothing about issue 145 goes past L1. See
+is calibrated and nothing about issue 145 goes past L1. The Isaac Lab recorder is
+written and waits for a GPU session
+([docs/GPU_SESSION.md](https://github.com/dundysm/gaitkeeper/blob/main/docs/GPU_SESSION.md)). See
 [STATUS.md](https://github.com/dundysm/gaitkeeper/blob/main/STATUS.md) for what works, what was measured and what is left.
 
 <details>

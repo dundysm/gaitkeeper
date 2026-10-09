@@ -1,11 +1,11 @@
 """Analyse the E4 traces (plan Appendix B) on the CPU.
 
-    python tools/e4.py --contract contract.yaml --mjcf <scene.xml> \\
+    python tools/e4.py --contract contract.yaml --mjcf <scene.xml> --frictionless \\
         runs/e4_stock_5ms runs/e4_stock_2p5ms --ankle runs/e4_ankle_5ms --ankle-change 0.01
 
 The analysis model is the target MJCF at each trace's step, with the
 contract's drive. Joint friction in the analysis model leaves a joint out of
-the linear fits, so give a frictionless scene or accept fewer joints.
+the linear fits, so pass --frictionless or accept fewer joints.
 """
 
 import argparse
@@ -26,11 +26,23 @@ def main() -> int:
     ap.add_argument("--ankle", help="trace with the ankle armature changed in the source")
     ap.add_argument("--ankle-change", type=float, default=0.01)
     ap.add_argument("--json")
+    ap.add_argument(
+        "--frictionless",
+        action="store_true",
+        help="zero the target's joint friction and passive damping, so every joint can be fit",
+    )
     args = ap.parse_args()
+    target = args.mjcf
+    if args.frictionless:
+        from gaitkeeper.inject import physics_edit
+        from gaitkeeper.models import load_model
+
+        target = load_model(args.mjcf).model
+        physics_edit("frictionless")(target)
     r = e4(
         [Trace.load(p) for p in args.stock],
         Contract.load(args.contract),
-        args.mjcf,
+        target,
         Trace.load(args.ankle) if args.ankle else None,
         args.ankle_change if args.ankle else None,
     )

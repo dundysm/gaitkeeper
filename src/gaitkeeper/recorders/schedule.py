@@ -28,6 +28,36 @@ DEFAULT_SCHEDULE: list[tuple[float, float, float, float]] = [
 ]
 
 
+# For unitree_rl_lab's G1 velocity policy: every command inside its deploy.yaml limits
+# (vx -0.5 to 1.0, vy +-0.3, wz +-0.2). Small commands below and above the 0.1 stand
+# threshold, in-place yaw at the limit, and fourteen seconds of walking while turning,
+# which is what moves the heading past 90 degrees: in MuJoCo this policy turns at about
+# 0.13 rad/s while walking and barely in place. Recorded with a 24 s episode, so the
+# reset falls between the two halves.
+RL_LAB_SCHEDULE: list[tuple[float, float, float, float]] = [
+    (0.0, 0.0, 0.0, 0.0),
+    (1.0, 0.05, 0.0, 0.0),
+    (2.5, 0.0, 0.06, 0.0),
+    (4.0, 0.0, 0.0, 0.08),
+    (5.0, 0.15, 0.0, 0.0),  # between the stand threshold and the measured dead zone edge
+    (6.0, 0.0, 0.0, 0.2),  # in-place yaw at the limit
+    (7.5, 0.6, 0.0, 0.2),  # walk and turn: the heading sweep
+    (21.5, 0.0, 0.0, 0.0),  # the episode resets at 24 s
+    (25.0, 1.0, 0.0, 0.0),
+    (26.5, 0.0, 0.3, 0.0),
+    (28.0, 0.0, -0.3, 0.0),
+    (29.5, 0.0, 0.0, -0.2),
+    (31.0, -0.5, 0.0, 0.0),
+    (32.5, 0.8, -0.2, -0.2),
+    (35.0, 0.0, 0.0, 0.0),
+]
+RL_LAB_EPISODE_S = 24.0
+RL_LAB_PUSHES: list[tuple[float, float, str, tuple[float, float, float]]] = [
+    (12.0, 0.15, "torso_link", (0.0, 300.0, 0.0)),  # sideways while walking and turning
+    (33.5, 0.15, "torso_link", (-300.0, 0.0, 0.0)),  # backward while walking forward and turning
+]
+
+
 # (start_s, duration_s, body, (fx, fy, fz) in N, world frame). Pushes load the
 # legs past what walking needs so that a torque limit is reached (plan 7.6).
 DEFAULT_PUSHES: list[tuple[float, float, str, tuple[float, float, float]]] = [

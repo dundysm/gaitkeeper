@@ -7,6 +7,15 @@ largest clean-step RMS per joint and the largest root residual RMS over the
 traces. Writes or updates ``src/gaitkeeper/data/floors.json``.
 
     python tools/calibrate_floor.py runs/g1_golden_a runs/g1_golden_b runs/g1_golden_c
+
+A trace from an engine other than MuJoCo carries no MuJoCo model. Give one with ``--mjcf``;
+for Isaac Lab traces the joint armature the recorder read from PhysX
+(``isaac_model.json``) is written into it by joint name. The floor then also holds the
+difference between that MJCF and the simulated asset, so it is an upper bound, and the
+floor table names the MJCF it was calibrated against.
+
+    python tools/calibrate_floor.py runs/isaac_golden_a runs/isaac_golden_b \\
+        --mjcf <unitree_mujoco scene_29dof.xml> --frictionless
 """
 
 import argparse
@@ -18,10 +27,33 @@ from gaitkeeper.residual import FLOORS_PATH, calibrate, engine_key
 from gaitkeeper.trace import Trace
 
 
+def source_model(mjcf: str, trace: Trace, frictionless: bool):
+    """The given MJCF with the source's own joint armature, when the trace recorded it."""
+    import mujoco
+
+    from gaitkeeper.inject import physics_edit
+    from gaitkeeper.models import load_model
+
+    m = load_model(mjcf).model
+    if frictionless:
+        physics_edit("frictionless")(m)
+    live = Path(trace.path) / "isaac_model.json" if trace.path else None
+    if live and live.exists():
+        d = json.loads(live.read_text())
+        for name, arm in zip(d["joint_names"], d["armature"]):
+            j = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, name)
+            if j < 0:
+                raise SystemExit(f"{mjcf}: no joint {name} (from {live})")
+            m.dof_armature[m.jnt_dofadr[j]] = float(arm)
+    return m
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("traces", nargs="+")
     ap.add_argument("--out", default=str(FLOORS_PATH))
+    ap.add_argument("--mjcf", help="analysis model for traces without their own MuJoCo model")
+    ap.add_argument("--frictionless", action="store_true", help="with --mjcf: zero joint friction")
     args = ap.parse_args()
     traces = [Trace.load(p) for p in args.traces]
     keys = {engine_key(t.meta) for t in traces}
@@ -31,8 +63,16 @@ def main() -> None:
     floor = calibrate(
         traces,
         contract_of=lambda t: Contract.load(Path(t.path) / "contract.live.yaml"),
-        model_of=lambda t: t.path,
+        model_of=(
+            (lambda t: source_model(args.mjcf, t, args.frictionless))
+            if args.mjcf
+            else (lambda t: t.path)
+        ),
     )
+    if args.mjcf:
+        floor["analysis_model"] = Path(args.mjcf).name + (
+            " (frictionless)" if args.frictionless else ""
+        )
     out = Path(args.out)
     data = json.loads(out.read_text()) if out.exists() else {"engines": {}}
     old = data["engines"].get(key)

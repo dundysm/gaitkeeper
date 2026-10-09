@@ -172,36 +172,27 @@ show that PhysX is one.
 
 ## What is left
 
-**Isaac Lab recorder, and the GPU session it needs.** Not written. One GPU
-with 16 GB or more (L4, A10G, RTX 4090 class), on the stack unitree_rl_lab
-at 4960b84, which pins Isaac Sim 5.1.0 and Isaac Lab 2.3.0. Record those
-versions in the trace. The policy folder ships `policy.onnx` and no
-checkpoint, so the play env has to be driven from ONNX. Analysis after the
-session is on CPU. Roughly 4 to 6 GPU hours including setup, about 1 hour of
-that simulation, and another session if the Isaac Lab API has moved.
+**Isaac Lab recorder, and the GPU session it needs.** Written, not yet run:
+`gaitkeeper.recorders.isaaclab` (`tools/record_isaaclab.py`) with `doctor` (a smoke
+test), `check` (small commands under both gain sets) and `record` (golden traces in the
+mjlab recorder's schema, plus the live contract and what PhysX simulated). Its CPU parts
+are tested; the Isaac parts have never touched a GPU, so expect fixes on the first run.
+`tools/gpu/setup_runpod.sh` installs the pinned stack (Isaac Sim 5.1.0, Isaac Lab 2.3.0,
+unitree_rl_lab 4960b84, the G1 USD) and runs `doctor`. The commands, in order, are in
+docs/GPU_SESSION.md. One GPU with 16 GB or more and RT cores; roughly 3 to 5 GPU hours
+including setup, about 1 hour of that simulation.
 
-1. Small command check, about 0.25 h. Play env, shipped ONNX, 16 envs: a
-   fixed 0.15 m/s forward, then 0.2 rad/s yaw alone, once with the asset
-   config's gains and once with the deploy.yaml gains. Four runs of 20 s.
-   This is what says which gains were trained, and whether the dead zone
-   exists on the source physics.
-2. Recorder, about 2 to 3 h, mostly debugging. Same trace schema as the
-   mjlab recorder: control rate arrays, one physics row per substep (root
-   and joint state, joint position targets, applied torque, step and
-   substep), the articulation's armature, friction, damping, limits, masses,
-   centers of mass, inertias and contact material, the startup randomization,
-   and the live contract. Record the golden schedule (36 s) and the issue
-   145 tour (`src/gaitkeeper/data/issue145_tour.yaml`, 3 seeds, with and without
-   punches). Then `gaitkeeper verify` on CPU. Agreement there is the only path
-   to `POLICY_UNDER_TASK` for issue 145.
-3. E4 on PhysX, about 0.5 h. Same schedule and seed: stock at 5 ms
-   (decimation 4), ankle armature set 0.01 above stock at 5 ms, stock at
-   2.5 ms (decimation 8) and at 2 ms (decimation 10), policy step held at
-   0.02 s. On CPU, `python tools/e4.py` against a frictionless unitree_mujoco
-   G1. The bar already fixed, before any PhysX data: ankles within 20% of
-   -0.01 and the fit explained. Then `tools/calibrate_floor.py` on the Isaac
-   traces. Until that floor exists, D on an Isaac trace cannot give
-   `PHYSICS`.
+1. Small command check, about 0.25 h: which gains were trained, and whether the dead
+   zone exists on the source physics.
+2. Golden traces, 3 seeds, and the issue 145 tour (`src/gaitkeeper/data/issue145_tour.yaml`,
+   3 seeds, with and without punches). Then `gaitkeeper verify` on CPU. Agreement there is
+   the only path to `POLICY_UNDER_TASK` for issue 145.
+3. E4 on PhysX: stock at 5 ms, ankle armature 0.01 above stock at 5 ms, stock at 2.5 ms and
+   2 ms, policy step held at 0.02 s. On CPU, `python tools/e4.py --frictionless` against
+   unitree_mujoco's G1. The bar already fixed, before any PhysX data: ankles within 20% of
+   -0.01 and the fit explained. Then `tools/calibrate_floor.py --mjcf` on the Isaac traces.
+   That floor includes the difference between the USD and the MJCF, so it is an upper
+   bound. Until it exists, D on an Isaac trace cannot give `PHYSICS`.
 
 **More source engines.** A floor per engine, from traces recorded in that
 engine against its own model. mjlab is the only one calibrated.

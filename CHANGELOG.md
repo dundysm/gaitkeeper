@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+* The Isaac Lab recorder (`gaitkeeper.recorders.isaaclab`, `tools/record_isaaclab.py`):
+  `doctor`, `check` and `record` for unitree_rl_lab's G1 velocity policy. Untested on a
+  GPU so far.
+* `tools/gpu/setup_runpod.sh` and docs/GPU_SESSION.md for the session that runs it.
+* `tools/e4.py --frictionless`, and `tools/calibrate_floor.py --mjcf` for traces from an
+  engine with no MuJoCo model.
+
 ## 0.1.1
 
 * Documentation only: the README on PyPI matches the repository.

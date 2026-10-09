@@ -21,10 +21,20 @@ against that MJCF, and `envelope` maps how the robot responds to commands.
 init, term boundaries and labels) from a trace, and abstains while any column
 is ambiguous.
 
+With a target MJCF and a golden trace that records physics-rate channels,
+`verify` also measures boundary D (the inverse dynamics residual of the trace
+under the target, against a floor calibrated for the source engine) and runs
+the model counterfactual: the source's recorded model and the target in the
+same closed loop, then the target with one parameter group at a time taken
+from the source. `PHYSICS` needs all of that; a residual alone is never a
+cause.
+
 Status: early. The mjlab recorder, the B, A, C comparator, the Unitree
 deploy.yaml reader, the runner, the checks, the envelope with its behavior
-probes and `infer` exist. Physics attribution (boundary D) is not
-implemented.
+probes, `infer`, boundary D (floor calibrated for mjlab 1.2.0 on
+mujoco_warp 3.5.0 only), the counterfactual and the verdict engine exist.
+Nothing has been recorded in Isaac Lab yet, so no Isaac or PhysX source is
+calibrated. See `STATUS.md`.
 
 ## Install
 
@@ -46,7 +56,19 @@ Python 3.10 or newer.
     sim2sim verify runs/g1_golden --onnx <policy.onnx> --yaml <deploy.yaml>
     sim2sim verify harness_log.npz --contract contract.yaml --policy <policy.onnx>
 
-`verify` exits 0 for PASS, 2 for CONTRACT, 3 for UNDETERMINED.
+    # with a target: boundary D, the nominal closed loop and the model counterfactual
+    sim2sim verify runs/g1_golden --contract runs/g1_golden/contract.live.yaml \
+        --onnx <policy.onnx> --mjcf <scene.xml> --seeds 12
+    sim2sim residual runs/g1_golden --contract runs/g1_golden/contract.live.yaml --mjcf <scene.xml>
+
+    # a task without a reference (L1 at most): schedule, held joints, punches
+    sim2sim task --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> \
+        --schedule tour.yaml --hold left_elbow_joint,right_elbow_joint \
+        --push-every 3 --push-first 20 --push-force 600
+
+Exit codes (`verify`, `task`): 0 PASS (or L1 findings with nothing failing),
+1 CONTRACT, 2 INVALID_INPUT, 3 PHYSICS, 4 POLICY_UNDER_TASK, 5 UNDETERMINED
+(or L1 findings such as TASK_FAILURE_OBSERVED), 6 UNSUPPORTED.
 
     # Unitree deploy.yaml, read as what the robot runs (SDK tables: G1 29-DoF, H1)
     sim2sim inspect --deploy <deploy.yaml> --onnx <policy.onnx>
@@ -73,7 +95,10 @@ Python 3.10 or newer.
 
 Runner backends: `native_implicit` (default; PD inside MuJoCo every step),
 `explicit_zoh` (torque held over the training `sim_dt`; the MuJoCo step is
-changed to divide it and the change is printed), `python_pd` (debugging).
+changed to divide it and the change is printed), `python_pd` (debugging),
+`standin_implicit` (a position-implicit drive in damping and Euler, the way
+some engines integrate PD; used to test that boundary D does not turn a drive
+difference into a cause).
 Torque limits come from the MJCF unless `--limits contract`. A field the
 contract takes from no source prints `CONTROLLER_ASSUMED`. `--preset` fills
 named training facts (for example
@@ -150,6 +175,32 @@ recorded golden trace are present. They show:
   (no-policy baseline 0.62 s on the same model and backend), S17a warns, S17b
   fails with a tipping time constant between 0.2 and 0.6 s, and the fall time
   comparison is suppressed; under native_implicit it walks.
+* Boundary D on the three mjlab golden traces against their own recorded
+  model: at the calibrated floor (legs 1e-6 to 4e-5 N m clean RMS, arms
+  8e-5 to 5e-4, waist up to 1.8e-3, root 0.51 N and 0.11 N m; float32 source,
+  float64 analysis). Legs are judged on swing steps only. An injected ankle
+  armature change (+0.01, -0.002) is named on both legs, and the research fit
+  recovers it with the right sign and size; armature, damping and effort
+  limit changed together on one leg are named as that chain, never as one
+  parameter (AT11); with joint friction on both sides an armature search
+  recovers a wrist change; the stand-in drive shows armature -h^2 kp and
+  damping -h kp exactly (Appendix B).
+* The counterfactual on the mjlab golden trace with the target changed: floor
+  friction 0.1 gives `PHYSICS` with contact parameters as the group whose swap
+  restores the outcome; torso +15 kg gives mass and inertia, then body masses.
+  The source's own model with a dead-zone task gives `POLICY_UNDER_TASK`
+  (AT9). Armature 0 and floor friction 2.0 never give `CONTRACT` (AT1). A
+  source with the stand-in drive is far above floor on every chain, its
+  behavior unchanged, and a dead-zone task failure gives `POLICY_UNDER_TASK`,
+  never `PHYSICS` (AT15).
+* Every row of the plan's decision table is a test, with the invariants
+  (no `PHYSICS` without a nominal failure, D above a calibrated floor and a
+  counterfactual change; no `PHYSICS` or `CONTRACT` without a reference).
+* The issue 145 setup (unitree_rl_lab policy on unitree_mujoco's G1, arms
+  held, small commands, in-place turns, 600 N punches) gives
+  `TASK_FAILURE_OBSERVED / BEHAVIORAL_LIMITATION` at L1, exit 5, with the
+  caveats that a silent contract error is not excluded and nothing is
+  attributed.
 * `infer` recovers history length, layout, order and init on all four layouts
   from `(obs, action)` alone; labels every term with its scale and joint order
   from raw state (including a world-frame gyro); abstains with no boundaries
@@ -184,9 +235,21 @@ committed):
   (fwd + yaw) miss the bar; armature 0 and a 5 ms step under python_pd are
   numerical. The mjlab G1 policy has only its by-design 0.05 dead zone, tracks
   yaw while walking at 74% to 99% and survives 2 of 10 punch runs.
-* Open: S17b on native_implicit at a 5 ms step reports one complex pair just
-  outside the unit circle (modulus about 1.0001, growth time about 44 s) while
-  every scenario passes. The tolerance was left as specified.
+* S17b at a 5 ms step (unitree_rl_lab policy, unitree_mujoco G1): the complex
+  pair at modulus 1.0001 is a real slow mode of the linearized standing
+  system, not numerical. It is the same for finite difference steps 1e-4 to
+  1e-9, centered or forward; it is present at 2 ms with the same rate per
+  second (0.025/s against 0.023/s, turning 0.025 rad/s), where the per-step
+  tolerance hides it; it lives in base y, yaw and ankle roll, next to the
+  exact translation and yaw symmetries, and comes and goes with the settle
+  time. With the policy in the loop a yaw offset stays at 0.0100 rad for 45 s
+  (the mode would predict 0.028). S17b now reports such a pair as drift, as it
+  already did slow real modes; the per-step tolerance is unchanged.
+* `results.json` (`tools/results.py`): 62 cases with a known cause (the
+  injection corpus, the 29 development logs, the physics and task cases
+  above), 55 confident outputs, 0 false confident attributions, abstention
+  6.5%; A detected 27 of 27, C 25 of 25, D 3 of 3. The development logs were
+  used to fix the comparator, so this is not a measure on unseen harnesses.
 
 They do not show that any of this holds for other frameworks, other robots,
 real harness logs, or the robot itself. Runner results are labeled with the

@@ -208,6 +208,17 @@ def gait_phase(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
     return out
 
 
+def gait_phase_legs(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    """A two-leg clock: [sin, sin, cos, cos] of the left and right phases, the right leg half
+    a period behind, so [s, -s, c, -c]. Used by ClOBOT's G1 policy (gait_phase_legs, period
+    1.0); the clock runs from the episode start and is never zeroed."""
+    period = float(p["period"])
+    offset = float(p.get("offset", 0.5))
+    ph = np.mod(s.episode_step.astype(np.float64) * ctx.policy_dt, period) / period
+    a, b = 2 * np.pi * ph, 2 * np.pi * (ph + offset)
+    return np.stack([np.sin(a), np.sin(b), np.cos(a), np.cos(b)], axis=1)
+
+
 def joint_pos_rel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
     return s.joint_pos[:, s.joint_index(ctx.joint_names)] - ctx.default_joint_pos[None]
 
@@ -225,6 +236,7 @@ TERMS: dict[str, TermFn] = {
     "projected_gravity": projected_gravity,
     "velocity_commands": velocity_commands,
     "gait_phase": gait_phase,
+    "gait_phase_legs": gait_phase_legs,
     "joint_pos_rel": joint_pos_rel,
     "joint_vel_rel": joint_vel_rel,
     "last_action": last_action,

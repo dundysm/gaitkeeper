@@ -45,11 +45,18 @@ TERM_IDS = {
     "velocity_commands": "velocity_commands",
     "keyboard_velocity_commands": "velocity_commands",
     "gait_phase": "gait_phase",
+    "gait_phase_legs": "gait_phase_legs",
     "joint_pos_rel": "joint_pos_rel",
     "joint_vel_rel": "joint_vel_rel",
     "last_action": "last_action",
 }
-DIMS = {"base_ang_vel": 3, "projected_gravity": 3, "velocity_commands": 3, "gait_phase": 2}
+DIMS = {
+    "base_ang_vel": 3,
+    "projected_gravity": 3,
+    "velocity_commands": 3,
+    "gait_phase": 2,
+    "gait_phase_legs": 4,
+}
 JOINT_TERMS = ("joint_pos_rel", "joint_vel_rel", "last_action")
 
 CPP = "unitree deploy C++ (deploy/include, same in unitree_rl_lab@4960b84 and unitree_rl_mjlab@1425b15)"

@@ -98,3 +98,50 @@ def test_held_joints_stay_at_the_hold_pose_and_pushes_apply(url):
     assert [p["kind"] for p in res.pushes] == ["velocity", "force"]
     obs = res.log["obs"]
     assert obs.shape[1] == 480
+
+
+def _legs_only(c, unlisted):
+    """The contract restricted to its first 15 policy joints in MuJoCo order (legs, waist)."""
+    import copy
+
+    from gaitkeeper.contract import Contract
+
+    d = copy.deepcopy(c.to_dict())
+    keep = [
+        n
+        for n in d["policy_io"]["joints"]["names"]
+        if "shoulder" not in n and "elbow" not in n and "wrist" not in n
+    ]
+    d["policy_io"]["joints"]["names"] = keep
+    d["policy_io"]["joints"].pop("joint_ids_map", None)
+    ctl = d["control"]
+    ctl["default_joint_pos"] = {n: ctl["default_joint_pos"][n] for n in keep}
+    for k in ("scale", "offset"):
+        ctl["actions"]["joint_pos"][k] = {n: ctl["actions"]["joint_pos"][k][n] for n in keep}
+    for k in ("kp", "kd"):
+        ctl["actuators"][k] = {n: ctl["actuators"][k][n] for n in keep}
+    if unlisted is not None:
+        ctl["unlisted"] = unlisted
+    return Contract.from_dict(d), keep
+
+
+def test_unlisted_joints_are_held_only_when_the_contract_says_so(url):
+    import mujoco
+
+    arms = {"left_elbow_joint": 0.97, "right_elbow_joint": 0.97}
+    c, keep = _legs_only(url, {"pose": arms, "kp": 50.0, "kd": {"left_elbow_joint": 2.0}})
+    r = Runner(c, UMJ_G1, None)
+    m, d, b = r.build(RunConfig(), "native_implicit")
+    assert len(b.unlisted) == 29 - len(keep)
+    by_q = {q: (a, pose) for a, q, pose in b.unlisted}
+    for nm, v in arms.items():
+        j = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, nm)
+        a, pose = by_q[int(m.jnt_qposadr[j])]
+        assert pose == v and m.actuator_gainprm[a, 0] == 50.0
+    r.reset_state(m, d, b, RunConfig(), r.default, np.random.default_rng(0))
+    j = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, "left_elbow_joint")
+    assert d.qpos[m.jnt_qposadr[j]] == 0.97
+    # Without control.unlisted nothing changes: those joints get no torque, as before.
+    c0, _ = _legs_only(url, None)
+    _, _, b0 = Runner(c0, UMJ_G1, None).build(RunConfig(), "native_implicit")
+    assert b0.unlisted == []

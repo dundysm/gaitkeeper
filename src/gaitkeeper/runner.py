@@ -162,6 +162,8 @@ class Binding:
     pd_every: int  # MuJoCo steps per torque update
     integrator: str
     model_notes: list[str] = field(default_factory=list)
+    # joints the policy does not list, held by the harness: (actuator, qpos address, pose)
+    unlisted: list = field(default_factory=list)
 
 
 _INTEGRATORS = {
@@ -359,6 +361,25 @@ class Runner:
             out.append("  python_pd is a debugging backend; its results are not a controller claim")
         return out
 
+    def _unlisted(self, m: mujoco.MjModel, jid: np.ndarray, act_of: dict[int, int]) -> list:
+        """Actuated hinge joints the contract does not list. With ``control.unlisted`` they are
+        held as position servos at its pose (the harness's job for a legs-only policy);
+        without it they get no torque, as before."""
+        spec = self.contract.get("control.unlisted", None)
+        if not spec:
+            return []
+        listed = {int(j) for j in jid}
+        pose, kp, kd = spec.get("pose", {}) or {}, spec.get("kp", 0.0), spec.get("kd", 0.0)
+        out = []
+        for j in range(m.njnt):
+            if j in listed or m.jnt_type[j] != mujoco.mjtJoint.mjJNT_HINGE or j not in act_of:
+                continue
+            nm = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, j)
+            k = float(kp.get(nm, 0.0) if isinstance(kp, dict) else kp)
+            c = float(kd.get(nm, 0.0) if isinstance(kd, dict) else kd)
+            out.append((act_of[j], int(m.jnt_qposadr[j]), float(pose.get(nm, 0.0)), k, c))
+        return out
+
     # -- model --
     def build(self, cfg: RunConfig, backend: str) -> tuple[mujoco.MjModel, mujoco.MjData, Binding]:
         lm = load_model(self.mjcf)
@@ -461,6 +482,18 @@ class Runner:
                 m.actuator_forcerange[a] = [-lim[i], lim[i]]
             else:
                 m.actuator_forcelimited[a] = 0
+        unlisted = self._unlisted(m, jid, act_of)
+        for a, _, _, kp_u, kd_u in unlisted:
+            m.actuator_gaintype[a] = mujoco.mjtGain.mjGAIN_FIXED
+            m.actuator_biastype[a] = mujoco.mjtBias.mjBIAS_AFFINE
+            m.actuator_dyntype[a] = mujoco.mjtDyn.mjDYN_NONE
+            m.actuator_gear[a, :] = 0.0
+            m.actuator_gear[a, 0] = 1.0
+            m.actuator_ctrllimited[a] = 0
+            m.actuator_gainprm[a, :] = 0.0
+            m.actuator_biasprm[a, :] = 0.0
+            m.actuator_gainprm[a, 0] = kp_u
+            m.actuator_biasprm[a, :3] = [0.0, -kp_u, -kd_u]
         d = mujoco.MjData(m)
         b = Binding(
             names=self.names,
@@ -483,6 +516,7 @@ class Runner:
             pd_every=pd_every,
             integrator=_INTEGRATOR_NAMES.get(int(m.opt.integrator), str(m.opt.integrator)),
             model_notes=list(lm.notes),
+            unlisted=[(a, q, pose) for a, q, pose, _, _ in unlisted],
         )
         return m, d, b
 
@@ -502,6 +536,9 @@ class Runner:
         q0 = b.base_qadr
         d.qpos[q0 + 3 : q0 + 7] = [math.cos(cfg.yaw0 / 2), 0.0, 0.0, math.sin(cfg.yaw0 / 2)]
         d.qpos[b.qadr] = pose
+        for a, q, p_ in b.unlisted:
+            d.qpos[q] = p_
+            d.ctrl[a] = p_
         if cfg.init_noise > 0:
             d.qpos[b.qadr] += rng.normal(0.0, cfg.init_noise, len(b.qadr))
         mujoco.mj_forward(m, d)

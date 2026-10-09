@@ -94,3 +94,16 @@ def test_term_slices_index_the_assembled_vector(layout):
     cols = term_slices(terms, hist)
     assert sorted(np.concatenate(list(cols.values())).tolist()) == list(range(6))
     assert set(obs[1, cols["b"]].tolist()) == {9.0, 8.0}
+
+
+def test_gait_phase_legs_is_a_two_leg_clock_half_a_period_apart():
+    from gaitkeeper.terms import gait_phase_legs
+
+    s = _state([[1, 0, 0, 0]] * 4, ep=np.array([0, 5, 10, 25]))
+    ctx = TermContext(["j0", "j1"], np.zeros(2), policy_dt=0.02)
+    out = gait_phase_legs(s, {"period": 1.0}, ctx)
+    ph = 2 * np.pi * np.array([0, 0.1, 0.2, 0.5])
+    np.testing.assert_allclose(out[:, 0], np.sin(ph), atol=1e-12)
+    np.testing.assert_allclose(out[:, 1], -np.sin(ph), atol=1e-12)
+    np.testing.assert_allclose(out[:, 2], np.cos(ph), atol=1e-12)
+    np.testing.assert_allclose(out[:, 3], -np.cos(ph), atol=1e-12)

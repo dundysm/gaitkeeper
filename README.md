@@ -382,6 +382,15 @@ controller assumptions they rest on and are evidence L1 at most.
 
 </details>
 
+## Help test it
+
+Every number above comes from cases built alongside the comparator. If you have a harness
+of your own, a few of its logs, with labels you seal before sending, are the most useful
+contribution: [docs/BLIND_TEST.md](docs/BLIND_TEST.md) describes the format and the
+protocol, and `tools/blind.py` scores only against the committed hashes. Start with a
+[blind test issue](https://github.com/dundysm/gaitkeeper/issues/new?template=blind-test.md).
+Results are published whatever they are.
+
 ## Formerly sim2sim
 
 The project was called sim2sim. Contracts and traces written under the old

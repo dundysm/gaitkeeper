@@ -217,7 +217,7 @@ were fixed before looking at the output. The protocol and the tooling exist
 (docs/BLIND_TEST.md, `tools/blind.py`, a blind test issue template); no
 submissions yet.
 
-**Posted.** A reply on unitree_rl_lab issue 145 (the mapping is right; the
+**Posted.** A follow-up on unitree_rl_lab issue 145 with the Isaac Lab results (2026-10-09). A reply on unitree_rl_lab issue 145 (the mapping is right; the
 policy's dead zone and punches explain the score, measured in MuJoCo) and
 unitree_rl_lab issue 149 (asking for a LICENSE file). Notes on the `efferent`
 log format and a list of exporter keys are drafts, not sent.

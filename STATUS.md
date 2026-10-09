@@ -221,9 +221,9 @@ submissions yet.
 unitree_rl_lab issue 145, and a list of exporter keys. None of them are in
 this repository, and none of them have been sent.
 
-**Release.** 0.1.0 is ready for PyPI: `.github/workflows/release.yml`
-publishes on a `v*` tag through trusted publishing, after a one-time pending
-publisher is added on pypi.org.
+**Release.** 0.1.0 is on PyPI (`pip install "gaitkeeper[sim]"`).
+`.github/workflows/release.yml` publishes each `v*` tag through trusted
+publishing; a release created on GitHub makes the tag.
 
 **Open decisions.** The license for the published golden traces, which
 contain the outputs of a policy whose repository has no license file. An

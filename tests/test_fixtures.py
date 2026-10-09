@@ -12,7 +12,12 @@ from gaitkeeper.cli import main
 
 def test_manifest_pins_every_file():
     sets = fixtures.manifest()
-    assert set(sets) == {"g1_rl_lab", "g1_rl_mjlab", "g1_unitree_mujoco", "g1_menagerie"}
+    base = {"g1_rl_lab", "g1_rl_mjlab", "g1_unitree_mujoco", "g1_menagerie"}
+    assert {k for k, s in sets.items() if s.group is None} == base
+    for s in sets.values():
+        assert s.host in fixtures.HOSTS
+        if s.group == "golden":  # published golden traces live in a dataset, not on GitHub
+            assert s.host == "huggingface"
     for s in sets.values():
         assert re.fullmatch(r"[0-9a-f]{40}", s.commit), s.name
         assert s.files and s.license
@@ -133,3 +138,28 @@ def test_model_without_a_floor_is_flagged(tmp_path):
         '<geom size="0.1"/></body></worldbody></mujoco>'
     )
     assert _floor_warning(str(scene)) is None
+
+
+def test_groups_stay_out_of_all_and_are_fetched_by_name(monkeypatch):
+    def fs(name, group=None, host="github"):
+        return fixtures.FixtureSet(name, "o/r", "a" * 40, "", "", {}, None, host, group)
+
+    sets = {
+        "a": fs("a"),
+        "b": fs("b"),
+        "g1": fs("g1", "golden", "huggingface"),
+        "g2": fs("g2", "golden", "huggingface"),
+    }
+    monkeypatch.setattr(fixtures, "manifest", lambda: sets)
+    assert fixtures.expand(["all"]) == ["a", "b"]
+    assert fixtures.expand(["golden"]) == ["g1", "g2"]
+    assert fixtures.expand(["a", "golden", "a"]) == ["a", "g1", "g2"]
+    with pytest.raises(fixtures.FixtureError, match="groups: golden"):
+        fixtures.expand(["nope"])
+
+
+def test_huggingface_files_resolve_at_the_pinned_revision():
+    url = fixtures.HOSTS["huggingface"].format(
+        repo="me/traces", commit="b" * 40, path="g1/golden.npz"
+    )
+    assert url == "https://huggingface.co/datasets/me/traces/resolve/" + "b" * 40 + "/g1/golden.npz"

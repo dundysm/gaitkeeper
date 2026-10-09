@@ -4,6 +4,11 @@ Nothing here is vendored. ``data/fixtures.json`` pins each set to an upstream
 commit and lists its files with sha256; ``fetch`` downloads them from that
 commit into a local directory and refuses any file whose hash differs.
 
+A set is hosted on GitHub (``"host": "github"``, the default) or in a Hugging
+Face dataset (``"host": "huggingface"``, where ``commit`` is the dataset
+revision). Sets in a ``group`` (the golden traces, about 130 MB each) are left
+out of ``fetch all`` and fetched by group name.
+
 The directory is ``$GAITKEEPER_DATA`` when set, else ``$XDG_CACHE_HOME/gaitkeeper``
 (``~/.cache/gaitkeeper``).
 """
@@ -22,6 +27,8 @@ from pathlib import Path
 from .env import env
 
 RAW = "https://raw.githubusercontent.com/{repo}/{commit}/{path}"
+HF = "https://huggingface.co/datasets/{repo}/resolve/{commit}/{path}"
+HOSTS = {"github": RAW, "huggingface": HF}
 
 
 class FixtureError(RuntimeError):
@@ -37,6 +44,8 @@ class FixtureSet:
     license: str
     files: dict[str, dict[str, str]]
     scene: str | None = None
+    host: str = "github"
+    group: str | None = None
 
     def dir(self, root: Path | None = None) -> Path:
         return (root or data_dir()) / self.name
@@ -62,9 +71,41 @@ def manifest() -> dict[str, FixtureSet]:
     text = resources.files("gaitkeeper").joinpath("data/fixtures.json").read_text()
     out = {}
     for name, s in json.loads(text)["sets"].items():
+        host = s.get("host", "github")
+        if host not in HOSTS:
+            raise FixtureError(f"fixture set {name!r}: unknown host {host!r}")
         out[name] = FixtureSet(
-            name, s["repo"], s["commit"], s["about"], s["license"], s["files"], s.get("scene")
+            name,
+            s["repo"],
+            s["commit"],
+            s["about"],
+            s["license"],
+            s["files"],
+            s.get("scene"),
+            host,
+            s.get("group"),
         )
+    return out
+
+
+def expand(names: list[str]) -> list[str]:
+    """Set names from command line words: a set, a group, or ``all`` (every set outside a group)."""
+    sets = manifest()
+    out: list[str] = []
+    for n in names:
+        if n == "all":
+            picked = [k for k, s in sets.items() if s.group is None]
+        elif n in sets:
+            picked = [n]
+        else:
+            picked = [k for k, s in sets.items() if s.group == n]
+            if not picked:
+                groups = sorted({s.group for s in sets.values() if s.group})
+                raise FixtureError(
+                    f"no fixture set or group {n!r}; sets: {', '.join(sorted(sets))}"
+                    + (f"; groups: {', '.join(groups)}" if groups else "")
+                )
+        out += [k for k in picked if k not in out]
     return out
 
 
@@ -86,7 +127,7 @@ def _sha(p: Path) -> str:
 def fetch(
     name: str,
     root: Path | None = None,
-    base_url: str = RAW,
+    base_url: str | None = None,
     log=print,
     timeout: float = 60.0,
 ) -> FixtureSet:
@@ -104,7 +145,7 @@ def fetch(
     log(f"  from {s.repo} at {s.commit[:7]} ({len(todo)} files) into {d}")
     log(f"  license: {s.license}")
     for local, f in todo:
-        url = base_url.format(repo=s.repo, commit=s.commit, path=f["path"])
+        url = (base_url or HOSTS[s.host]).format(repo=s.repo, commit=s.commit, path=f["path"])
         dest = s.path(local, root)
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(dest.name + ".part")

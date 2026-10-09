@@ -2,8 +2,9 @@
 (``gaitkeeper fetch all``; ``$GAITKEEPER_DATA`` or ``~/.cache/gaitkeeper``). Each test
 skips when its files are absent, so the unit suite runs anywhere.
 
-Recorded golden traces are not downloadable: they come from the recorder and
-live under ``runs/`` (``$GAITKEEPER_RUNS``)."""
+Recorded golden traces come from the recorder under ``runs/``
+(``$GAITKEEPER_RUNS``), or from ``gaitkeeper fetch golden`` into the fixture
+directory once they are published; a trace under ``runs/`` wins."""
 
 from pathlib import Path
 
@@ -27,4 +28,11 @@ def need(*paths: Path) -> None:
 
 
 RUNS = Path(env("RUNS") or Path(__file__).parents[1] / "runs")
-GOLDEN_A, GOLDEN_B, GOLDEN_C = (RUNS / f"g1_golden_{x}" for x in "abc")
+
+
+def _golden(name: str) -> Path:
+    local = RUNS / name
+    return local if local.exists() or not (DATA / name).exists() else DATA / name
+
+
+GOLDEN_A, GOLDEN_B, GOLDEN_C = (_golden(f"g1_golden_{x}") for x in "abc")

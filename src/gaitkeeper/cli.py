@@ -421,11 +421,15 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         print(f"fixture sets (directory {root}; set GAITKEEPER_DATA to change it):")
         for name, s in sets.items():
             state = "present" if s.present() else "not fetched"
-            print(f"  {name:18s} {state:12s} {s.repo}@{s.commit[:7]}: {s.about}")
+            group = f" [{s.group}]" if s.group else ""
+            print(f"  {name:18s} {state:12s} {s.repo}@{s.commit[:7]}{group}: {s.about}")
         if not args.sets:
-            print("fetch with `gaitkeeper fetch <set> ...` or `gaitkeeper fetch all`")
+            print("fetch with `gaitkeeper fetch <set or group> ...` or `gaitkeeper fetch all`")
+            print(
+                "(`all` leaves out grouped sets such as the golden traces: `gaitkeeper fetch golden`)"
+            )
         return 0
-    names = list(sets) if args.sets == ["all"] else args.sets
+    names = fixtures.expand(args.sets)
     for n in names:
         fixtures.fetch(n, log=lambda m: print(m, file=sys.stderr))
         print(f"{n}: {fixtures.get(n).dir()}")

@@ -1,0 +1,13 @@
+# The issue 145 setup as a velocity schedule: a waypoint tour with short legs
+# at small speeds, in-place turns at the deploy.yaml yaw limit (0.2 rad/s), one
+# normal walking leg, then a stand during which the punches come.
+# Rows: t (s), vx (m/s), vy (m/s), wz (rad/s); each row holds until the next.
+schedule:
+  - [0.0, 0.0, 0.0, 0.0]
+  - [2.0, 0.15, 0.0, 0.0]
+  - [6.0, 0.0, 0.0, 0.2]
+  - [10.0, 0.3, 0.0, 0.0]
+  - [14.0, 0.0, 0.0, -0.2]
+  - [18.0, 0.1, 0.0, 0.0]
+  - [22.0, 0.0, 0.1, 0.0]
+  - [26.0, 0.0, 0.0, 0.0]

@@ -557,10 +557,8 @@ def record(args: argparse.Namespace) -> Path:
     gap = 0.0
     for k in range(1, n):
         if not arrays["reset"][k]:
-            last = np.where(pstep == k - 1)[0][-1]
             nxt = np.where(pstep == k)[0][0]
             gap = max(gap, float(np.abs(arrays["p/qpos"][nxt] - arrays["qpos"][k]).max()))
-            del last
 
     contract = live_contract(env, train_cfg, play_ranges, onnx_path)
     lim = np.array([contract.get("model.effort_limit")[n] or np.inf for n in jnt_names])

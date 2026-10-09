@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -396,6 +397,151 @@ def cmd_infer(args: argparse.Namespace) -> int:
     return 0 if res.status == "inferred" else 3
 
 
+DEMO_ARMS = [
+    f"{side}_{j}"
+    for side in ("left", "right")
+    for j in (
+        "shoulder_pitch_joint",
+        "shoulder_roll_joint",
+        "shoulder_yaw_joint",
+        "elbow_joint",
+        "wrist_roll_joint",
+        "wrist_pitch_joint",
+        "wrist_yaw_joint",
+    )
+]
+
+
+def cmd_fetch(args: argparse.Namespace) -> int:
+    from . import fixtures
+
+    sets = fixtures.manifest()
+    if args.list or not args.sets:
+        root = fixtures.data_dir()
+        print(f"fixture sets (directory {root}; set SIM2SIM_DATA to change it):")
+        for name, s in sets.items():
+            state = "present" if s.present() else "not fetched"
+            print(f"  {name:18s} {state:12s} {s.repo}@{s.commit[:7]}: {s.about}")
+        if not args.sets:
+            print("fetch with `sim2sim fetch <set> ...` or `sim2sim fetch all`")
+        return 0
+    names = list(sets) if args.sets == ["all"] else args.sets
+    for n in names:
+        fixtures.fetch(n, log=lambda m: print(m, file=sys.stderr))
+        print(f"{n}: {fixtures.get(n).dir()}")
+    return 0
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    """The issue 145 setup on unitree_mujoco's G1, fetched on first use."""
+    from importlib import resources
+
+    from . import fixtures
+
+    need = ("g1_rl_lab", "g1_unitree_mujoco")
+    for n in need:
+        if not fixtures.get(n).present():
+            if args.no_fetch:
+                fixtures.require(n)
+            fixtures.fetch(n, log=lambda m: print(m, file=sys.stderr))
+    pol, scene = fixtures.get("g1_rl_lab"), fixtures.get("g1_unitree_mujoco")
+    tour = resources.files("sim2sim").joinpath("data/issue145_tour.yaml")
+    print(
+        "Demo: unitree_rl_lab issue 145, where the official G1 policy is reported to score 0% on a\n"
+        "waypoint tour in a third-party benchmark, and the question is whether the harness is wrong.\n"
+        "  policy   unitree_rl_lab G1 29 dof velocity policy as shipped (deploy.yaml, policy.onnx)\n"
+        "  target   unitree_mujoco's G1 29 dof scene, simulated on the CPU in MuJoCo\n"
+        "  task     small commands and in-place turns (data/issue145_tour.yaml), arms held at\n"
+        "           the default pose, then 600 N punches on the torso every 3 s from 27 s\n"
+        f"  seeds    {args.seeds}; first the command response map, then the task (under a minute)\n",
+        flush=True,
+    )
+    argv = [
+        "task",
+        "--deploy",
+        str(pol.path("deploy.yaml")),
+        "--onnx",
+        str(pol.path("policy.onnx")),
+        "--preset",
+        "unitree_rl_lab_g1_29dof_velocity@4960b84",
+        "--mjcf",
+        str(scene.path(scene.scene)),
+        "--schedule",
+        str(tour),
+        "--seconds",
+        "34",
+        "--name",
+        "issue 145 tour",
+        "--hold",
+        ",".join(DEMO_ARMS),
+        "--push-every",
+        "3",
+        "--push-first",
+        "27",
+        "--push-force",
+        "600",
+        "--push-duration",
+        "0.1",
+        "--push-body",
+        "torso_link",
+        "--seeds",
+        str(args.seeds),
+    ]
+    if args.workers:
+        argv += ["--workers", str(args.workers)]
+    if args.json:
+        argv += ["--json", args.json]
+    code = main(argv)
+    print(
+        "\nHow to read this: in this runner the policy stands still for small commands (the DEAD\n"
+        "ZONE lines above) and does not turn in place, which is most of what the tour asks for,\n"
+        "so the tour fails with a harness that follows the contract; the punches then knock it\n"
+        f"over. This is an L1 finding (this runner, these assumptions): `sim2sim task` exits {code}\n"
+        "here. It does not show that the benchmark's harness is correct, and it attributes\n"
+        "nothing; that needs a golden trace from the training simulator\n"
+        "(README: Exit codes, Evidence levels)."
+    )
+    return 0
+
+
+# Flags whose value must be an existing path.
+_PATH_FLAGS = ("contract", "onnx", "yaml", "deploy", "mjcf", "policy", "schedule", "reference")
+
+
+def _check_inputs(args: argparse.Namespace) -> str | None:
+    for flag in _PATH_FLAGS:
+        v = getattr(args, flag, None)
+        if v and not Path(v).exists():
+            return f"--{flag.replace('_', '-')} {v}: no such file"
+    t = getattr(args, "trace", None)
+    if (
+        isinstance(t, str)
+        and t
+        and args.cmd in ("verify", "residual", "infer", "deviation")
+        and not Path(t).exists()
+    ):
+        return f"trace {t}: no such file or directory"
+    return None
+
+
+def _floor_warning(mjcf: str) -> str | None:
+    """A model with nothing on the world body has no floor: the robot can only fall."""
+    if not mjcf.endswith(".xml"):
+        return None
+    try:
+        from .models import load_model
+
+        m = load_model(mjcf).model
+    except Exception:
+        return None  # the command itself reports why the model does not load
+    if int(m.body_geomnum[0]) == 0:
+        return (
+            f"warning: {mjcf} has no geom on the world body (no floor), so the robot can only "
+            "fall; give the scene file (for example scene_29dof.xml) rather than the robot file"
+        )
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="sim2sim")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -417,6 +563,20 @@ def main(argv: list[str] | None = None) -> int:
             choices=["native_implicit", "explicit_zoh", "python_pd", "standin_implicit"],
         )
         p.add_argument("--json")
+
+    p = sub.add_parser(
+        "demo", help="the issue 145 setup end to end (fetches its files on first use)"
+    )
+    p.add_argument("--seeds", type=int, default=3)
+    p.add_argument("--workers", type=int)
+    p.add_argument("--json")
+    p.add_argument("--no-fetch", action="store_true", help="fail instead of downloading")
+    p.set_defaults(fn=cmd_demo)
+
+    p = sub.add_parser("fetch", help="download pinned third-party models and policies")
+    p.add_argument("sets", nargs="*", help="fixture set names, or all; none lists them")
+    p.add_argument("--list", action="store_true")
+    p.set_defaults(fn=cmd_fetch)
 
     p = sub.add_parser("inspect", help="read a contract from exported files")
     contract_args(p)
@@ -526,7 +686,32 @@ def main(argv: list[str] | None = None) -> int:
         args.trace = args.trace or args.trace_opt
         if not args.trace:
             ap.error("infer needs a trace")
-    return args.fn(args)
+    problem = _check_inputs(args)
+    if problem:
+        print(f"sim2sim {args.cmd}: {problem}", file=sys.stderr)
+        return 2
+    if getattr(args, "mjcf", None):
+        w = _floor_warning(args.mjcf)
+        if w:
+            print(w, file=sys.stderr)
+    if os.environ.get("SIM2SIM_DEBUG"):
+        return args.fn(args)
+    try:
+        return args.fn(args)
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        return 130
+    except ModuleNotFoundError as e:
+        extra = {"mujoco": " (pip install -e .[sim])"}.get(str(e.name), "")
+        print(f"sim2sim {args.cmd}: needs the Python package {e.name!r}{extra}", file=sys.stderr)
+        return 2
+    except (OSError, ValueError, KeyError, RuntimeError) as e:
+        msg = e.args[0] if isinstance(e, KeyError) and e.args else e
+        print(
+            f"sim2sim {args.cmd}: {msg}\n  (set SIM2SIM_DEBUG=1 for the full traceback)",
+            file=sys.stderr,
+        )
+        return 2
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ mjlab trace) are reported from ``runs/step5`` but left out of the metric.
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from functools import partial
@@ -35,7 +36,9 @@ from sim2sim.contract import Contract  # noqa: E402
 from sim2sim.metrics import Case, score  # noqa: E402
 
 PRESET = "unitree_rl_lab_g1_29dof_velocity@4960b84"
-DEVSET = Path("devset")
+# The 29 development harness logs are not public; point --devset or
+# SIM2SIM_DEVSET at them. Without them the metric leaves the development set out.
+DEVSET = Path(os.environ.get("SIM2SIM_DEVSET", RUNS / "devset"))
 
 # case: (boundary that must fail, substrings the named patterns must contain)
 DEVSET_LABELS = {
@@ -274,7 +277,10 @@ def main() -> int:
     ap.add_argument("--skip-physics", action="store_true")
     ap.add_argument("--workers", type=int)
     args = ap.parse_args()
-    cases = injection_cases() + devset_cases(Path(args.devset))
+    dev = devset_cases(Path(args.devset))
+    if not dev:
+        print(f"no development logs in {args.devset}: the metric leaves them out", file=sys.stderr)
+    cases = injection_cases() + dev
     if not args.skip_physics:
         cases += physics_cases(args.workers)
     res = {

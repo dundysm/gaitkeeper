@@ -36,13 +36,80 @@ mujoco_warp 3.5.0 only), the counterfactual and the verdict engine exist.
 Nothing has been recorded in Isaac Lab yet, so no Isaac or PhysX source is
 calibrated. See `STATUS.md`.
 
+## Quick start
+
+    python -m venv .venv && . .venv/bin/activate
+    pip install -e .[sim]
+    sim2sim demo
+
+`demo` runs the issue 145 setup end to end on the CPU: unitree_rl_lab's G1
+velocity policy, as shipped, on unitree_mujoco's G1 scene, driven through a
+tour of small commands and in-place turns with the arms held, then 600 N
+punches. On first use it downloads the policy and the scene (about 20 MB,
+pinned commits, sha256 checked) into `~/.cache/sim2sim`. The run takes about
+15 s on 8 cores. It prints the contract it read, the command response map
+with its dead zones, the task segment by segment, and the finding:
+
+    DEAD ZONE  vx ignored for |cmd| <= 0.20 on the + side (first tracked +0.22); ...
+    Task 'issue 145 tour' (3 seeds) on .../scene_29dof.xml: misses the bar on 3/3 seeds
+        2.0 to   6.0 s (+0.15, +0.00, +0.00)  achieved (+0.00, -0.00, +0.00)  misses the bar on 3/3 seeds: dead zone
+        ...
+    Finding  TASK_FAILURE_OBSERVED / BEHAVIORAL_LIMITATION  (evidence L1, exit 5)
+      caveat: a silent contract error is not excluded
+      caveat: no attribution: neither PHYSICS nor CONTRACT can be concluded without a reference
+
+That is a finding about the policy in this runner, not a verdict on anyone's
+harness: see Evidence levels below.
+
 ## Install
 
-    pip install -e .[dev]                # comparator, tests
-    pip install -e .[sim]                # runner, check, envelope (MuJoCo)
+    pip install -e .[sim]                # runner, check, envelope, task, demo (MuJoCo)
+    pip install -e .[dev]                # tests and lint
     pip install -e .[record-mjlab]       # recorder (mjlab 1.2.0, MuJoCo 3.5.0, CPU is enough)
 
-Python 3.10 or newer.
+Python 3.10 or newer. Reading contracts and comparing traces needs only the
+base install (numpy, pyyaml, onnxruntime).
+
+## Third-party files
+
+Nothing third party is vendored. `sim2sim fetch` downloads pinned files from
+their upstream repositories at fixed commits and checks each sha256
+(`src/sim2sim/data/fixtures.json`):
+
+| Set | Source | What |
+|---|---|---|
+| `g1_rl_lab` | unitree_rl_lab @ 4960b84 | G1 29 dof velocity policy: deploy.yaml, policy.onnx |
+| `g1_rl_mjlab` | unitree_rl_mjlab @ 1425b15 | G1 velocity policy: deploy.yaml, policy.onnx |
+| `g1_unitree_mujoco` | unitree_mujoco @ 1eb6642 | G1 29 dof scene and meshes (BSD-3-Clause) |
+| `g1_menagerie` | mujoco_menagerie @ 0059d43 | Unitree G1 scene and meshes (BSD-3-Clause) |
+
+    sim2sim fetch                 # list the sets and whether they are present
+    sim2sim fetch all             # download every set
+
+The two policy repositories had no license file at those commits; the files
+are fetched for local use, not redistributed. The directory is
+`$SIM2SIM_DATA` when set, else `~/.cache/sim2sim`.
+
+## Evidence levels
+
+| Level | Name | Backed by |
+|---|---|---|
+| L0 | parsed | A file or preset. Static checks only. |
+| L1 | behaves | This runner only: behavioral findings under stated controller assumptions. |
+| L2 | conformant | Boundaries A to C match an independently recorded source trace on the covered states and channels. |
+| L3 | matched | L2, and the dynamics residual is at the calibrated floor on the measured channels. |
+
+"Verified" appears only at L2 or above. A trace written by sim2sim's own
+runner never raises the level.
+
+## Exit codes
+
+`verify` and `task`: 0 PASS (or L1 findings with nothing failing), 1
+CONTRACT, 2 INVALID_INPUT, 3 PHYSICS, 4 POLICY_UNDER_TASK, 5 UNDETERMINED (or
+L1 findings such as TASK_FAILURE_OBSERVED), 6 UNSUPPORTED. Every command exits
+2 with a one line message when an input is missing or unreadable
+(`SIM2SIM_DEBUG=1` shows the traceback), and warns when the MJCF has no floor.
+`demo` exits 0 when it ran.
 
 ## Use
 
@@ -65,10 +132,6 @@ Python 3.10 or newer.
     sim2sim task --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> \
         --schedule tour.yaml --hold left_elbow_joint,right_elbow_joint \
         --push-every 3 --push-first 20 --push-force 600
-
-Exit codes (`verify`, `task`): 0 PASS (or L1 findings with nothing failing),
-1 CONTRACT, 2 INVALID_INPUT, 3 PHYSICS, 4 POLICY_UNDER_TASK, 5 UNDETERMINED
-(or L1 findings such as TASK_FAILURE_OBSERVED), 6 UNSUPPORTED.
 
     # Unitree deploy.yaml, read as what the robot runs (SDK tables: G1 29-DoF, H1)
     sim2sim inspect --deploy <deploy.yaml> --onnx <policy.onnx>
@@ -106,9 +169,11 @@ named training facts (for example
 
 ## What the tests show
 
-`pytest` runs on synthetic traces with a stand-in linear policy, plus two
-integration tests that run only when the unitree_rl_mjlab export and a
-recorded golden trace are present. They show:
+`pytest` runs the unit suite on synthetic traces with a stand-in linear
+policy anywhere. Integration tests run on the fixtures (`sim2sim fetch all`)
+and on golden traces recorded with the mjlab recorder under `runs/`
+(`$SIM2SIM_RUNS`); each skips, naming what is missing, when its files are
+absent. They show:
 
 * A harness log built correctly from the contract passes B, A and C, where
   contract numbers printed to 3 decimals are admitted only through the

@@ -1,22 +1,17 @@
 """Integration with the shipped unitree_rl_mjlab export and a recorded golden trace.
 
-Skipped unless those files are present (paths from SIM2SIM_MJLAB_EXPORT and
-SIM2SIM_GOLDEN, or the defaults used during development).
+Skipped unless those files are present (`sim2sim fetch g1_rl_mjlab`; the
+golden trace from the mjlab recorder under runs/ or SIM2SIM_GOLDEN).
 """
 
 import os
 from pathlib import Path
 
 import pytest
+from assets import RUNS, UMJLAB_G1
 
-EXPORT = Path(
-    os.environ.get(
-        "SIM2SIM_MJLAB_EXPORT",
-        "unitree_rl_mjlab/deploy/robots/g1/config/policy/velocity/v0",
-    )
-)
-GOLDEN = Path(os.environ.get("SIM2SIM_GOLDEN", Path(__file__).parents[1] / "runs" / "g1_golden_a"))
-ONNX, YAML = EXPORT / "exported" / "policy.onnx", EXPORT / "params" / "deploy.yaml"
+GOLDEN = Path(os.environ.get("SIM2SIM_GOLDEN", RUNS / "g1_golden_a"))
+ONNX, YAML = UMJLAB_G1 / "policy.onnx", UMJLAB_G1 / "deploy.yaml"
 
 need_export = pytest.mark.skipif(not ONNX.exists(), reason="mjlab export not present")
 need_golden = pytest.mark.skipif(

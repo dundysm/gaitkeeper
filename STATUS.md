@@ -9,6 +9,8 @@ no posts. The upstream drafts in `../upstream/` are held.
 
 | Command | What it does | Evidence it can reach |
 |---|---|---|
+| `demo` | The issue 145 setup end to end (fetches its files on first use, about 15 s on 8 cores) | L1 findings only |
+| `fetch` | Pinned third-party policies and MJCF scenes from upstream commits, sha256 checked | none |
 | `inspect` | Contract from the exported files (mjlab ONNX metadata, Unitree deploy.yaml with SDK tables), with the source of every field | none (a reading) |
 | `verify <trace>` | Boundaries B, A, C against a golden trace or a harness log | L2 on a golden trace, L1 on a harness log or a self trace |
 | `verify <trace> --mjcf` | Plus boundary D, the nominal closed loop on the target and, when the source's model is recorded, the model counterfactual with group swapping; the verdict per section 4 | L2 for `PHYSICS` and `POLICY_UNDER_TASK`, L3 for PASS with D at floor |
@@ -21,7 +23,7 @@ no posts. The upstream drafts in `../upstream/` are held.
 Exit codes: 0 PASS, 1 CONTRACT, 2 INVALID_INPUT, 3 PHYSICS, 4 POLICY_UNDER_TASK,
 5 UNDETERMINED or L1 findings, 6 UNSUPPORTED.
 
-Tests: 174 pass (`pytest`, about 6 minutes on 8 cores; integration tests skip when the third-party files are absent). Every row of the section 4 decision table is a test, and
+Tests: 182 pass (`pytest`, about 2.5 minutes on 8 cores with the fixtures and golden traces present; 129 pass and 53 skip without them). Every row of the section 4 decision table is a test, and
 AT1, AT9, AT11, AT12 and AT15 are integration tests (AT2 and AT4 are covered by unit tests).
 
 ## What is shown, and at which level
@@ -89,13 +91,14 @@ exists yet.
   the terms; the tool says so, and three steps recover them. This shows the
   estimator works on a known drive, not that PhysX is one.
 
-## What needs a GPU
+## What needs a GPU (deferred)
 
-All three items need one Isaac Lab session on the stack `unitree_rl_lab`
+Deferred by decision on October 8: no GPU work for now, and no Isaac Lab
+recorder code exists. The plan for when it resumes: all three items need one Isaac Lab session on the stack `unitree_rl_lab`
 at 4960b84 pins (record the Isaac Sim and Isaac Lab versions). One GPU with
 16 GB or more (L4, A10G, RTX 4090 class). Analysis afterwards runs on the box.
 
-Before renting (CPU, can be written now but not run): `recorders/isaaclab.py`
+Before renting (CPU, can be written but not run without Isaac Lab): `recorders/isaaclab.py`
 modeled on `recorders/mjlab.py` (Appendix C keys; physics-rate rows per
 substep: root and joint state, joint position targets, applied torque, step
 and substep; a dump of the articulation's armature, friction, damping, limits,
@@ -110,7 +113,7 @@ env from `policy.onnx` (the folder ships no checkpoint).
    the dead zone exists on the source physics. About 0.25 h.
 2. **Isaac recorder, E3 on the source stack.** Record the schedule of
    `g1_golden_a` (36 s) and the issue 145 tour
-   (`runs/step5/issue145_schedule.yaml`, 3 seeds, with and without punches).
+   (`src/sim2sim/data/issue145_tour.yaml`, 3 seeds, with and without punches).
    Check on the box: `sim2sim verify <trace>` passes A to C. Then
    `sim2sim task` results can be compared with the source's: the only path to
    `POLICY_UNDER_TASK` for issue 145. About 2 to 3 h, mostly recorder
@@ -135,12 +138,18 @@ the recorder fails on Isaac Lab API changes, budget one more session.
   found. Free alternatives at the time of the plan: `simverdict`,
   `sim2verdict`, `gapcheck` (check again before choosing).
 * **License (D6).** `LICENSE` and `pyproject.toml` say Apache-2.0; confirm.
-  Fixtures from unitree_mujoco (BSD-3) and Menagerie are referenced by path
-  and commit, not vendored; keep it that way.
+  Third-party files are fetched from upstream by commit with sha256 checks,
+  not vendored; keep it that way. unitree_mujoco and Menagerie are BSD-3;
+  unitree_rl_lab and unitree_rl_mjlab had no license file at the pinned
+  commits, so a public demo that downloads their policies should say so (the
+  fetch output does) or ask Unitree first.
 * **Repo location.** Personal account or an organization; where the golden
   trace corpus lives (D4: a Hugging Face dataset or a small repo). The tests
-  read third-party files from the fixture directory paths (overridable by environment
-  variables) and skip without them; public CI needs a fixture download step.
+  read third-party files from the fixture directory (`sim2sim fetch all`,
+  `$SIM2SIM_DATA`) and skip without them, so CI needs only that step. The
+  golden traces (about 126 MB each) and the 29 development logs are not
+  downloadable yet: their tests skip and `tools/results.py` leaves the
+  development set out unless `--devset` or `$SIM2SIM_DEVSET` points at it.
   `runs/` is not committed.
 * **README claims (D8).** Only what passes in CI on the box. Safe today: B, A,
   C on the synthetic corpus and on the mjlab golden traces; D and the

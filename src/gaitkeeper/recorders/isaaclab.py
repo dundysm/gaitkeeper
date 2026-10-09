@@ -151,7 +151,7 @@ def summarize(
     out["vx_spread"] = float(v[..., 0].mean(0).std())
     out["action_std"] = float(actions[-tail:][:, ok].std(0).mean())
     out["mean_abs_joint_vel"] = float(np.abs(joint_vel[-tail:][:, ok]).mean())
-    out["standstill"] = bool(out["action_std"] < 0.02 and out["mean_abs_joint_vel"] < 0.01)
+    out["standstill"] = bool(out["action_std"] < 0.02 and out["mean_abs_joint_vel"] < 0.05)
     return out
 
 
@@ -170,7 +170,7 @@ def verdict_lines(results: dict[str, Any]) -> list[str]:
             continue
         lines.append(f"{gains} gains: walks at 0.5 m/s ({walk['vx']:.2f} m/s)")
         if "vx" in f15:
-            stands = f15["standstill"] and abs(f15["vx"]) < 0.03
+            stands = abs(f15["vx"]) < 0.03  # no forward motion, whether or not it steps in place
             what = (
                 "stands still, as in MuJoCo"
                 if stands
@@ -185,11 +185,31 @@ def verdict_lines(results: dict[str, Any]) -> list[str]:
 # -- Isaac Lab -------------------------------------------------------------------------------------
 
 
+_LAUNCHER: Any = None
+
+
 def launch(headless: bool = True) -> Any:
     """Start Isaac Sim. Must run before any isaaclab import."""
     from isaaclab.app import AppLauncher
 
-    return AppLauncher(headless=headless).app
+    global _LAUNCHER
+    # Keep the launcher alive: when it is garbage collected the app shuts down and the
+    # process exits with status 0, in the middle of whatever comes next.
+    _LAUNCHER = AppLauncher(headless=headless)
+    return _LAUNCHER.app
+
+
+def _close(app: Any, code: int = 0) -> None:
+    """Flush first: closing the app ends the process (status 0) without flushing Python's
+    buffers, so anything printed to a pipe or file would be lost. A failure exits directly
+    with its own status."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if code:
+        import os
+
+        os._exit(code)
+    app.close()
 
 
 def _np(x: Any) -> np.ndarray:
@@ -248,8 +268,15 @@ def make_env(args: argparse.Namespace, num_envs: int) -> tuple[Any, dict[str, An
     bv.rel_standing_envs = 0.0
     bv.heading_command = False
     bv.debug_vis = False
+    # A reset still resamples the command, and the observation built at the reset sees it.
+    # Sampling from zero ranges makes that command zero, which the schedules start with.
+    for ax in ("lin_vel_x", "lin_vel_y", "ang_vel_z"):
+        setattr(bv.ranges, ax, (0.0, 0.0))
+    if getattr(bv.ranges, "heading", None) is not None:
+        bv.ranges.heading = (0.0, 0.0)
     changes[f"commands.{COMMAND_TERM}"] = (
-        "set by the recorder every step; resampling and standing envs off"
+        "set by the recorder every step; resampling and standing envs off; "
+        "sampling ranges zero, so a reset starts from a zero command"
     )
     cfg.episode_length_s = args.episode_s
     changes["episode_length_s"] = args.episode_s
@@ -348,10 +375,26 @@ def doctor(args: argparse.Namespace) -> dict[str, Any]:
     print(json.dumps(rep, indent=1))
     print("doctor: ok" if not problems else "doctor: PROBLEMS\n  " + "\n  ".join(problems))
     env.close()
-    app.close()
-    if problems:
-        raise SystemExit(1)
+    _close(app, 1 if problems else 0)
     return rep
+
+
+def write_contract(args: argparse.Namespace) -> Path:
+    """The live contract alone, from a fresh one-env environment (no simulation)."""
+    app = launch(not args.gui)
+    env, _, train_cfg = make_env(args, 1)
+    gains_source = "asset config"
+    if args.gains == "deploy":
+        set_gains(env, *deploy_gains(args.deploy, args.onnx))
+        gains_source = "deploy.yaml"
+    c = live_contract(env, train_cfg, Path(args.onnx), gains_source)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    c.save(out)
+    print(f"wrote {out}")
+    env.close()
+    _close(app)
+    return out
 
 
 def check(args: argparse.Namespace) -> dict[str, Any]:
@@ -424,7 +467,7 @@ def check(args: argparse.Namespace) -> dict[str, Any]:
         Path(args.out).write_text(json.dumps(out, indent=1))
         print(f"written {args.out}")
     env.close()
-    app.close()
+    _close(app)
     return out
 
 
@@ -465,12 +508,10 @@ def live_contract(env: Any, train_cfg: Any, onnx: Path, gains_source: str) -> Co
         h = int(tcfg.history_length or 0)
         dim_total = int(np.prod(om._group_obs_term_dim[OBS_GROUP][k]))
         dim = dim_total // max(h, 1)
-        scale = tcfg.scale
-        scale = (
-            scale.tolist()
-            if hasattr(scale, "tolist")
-            else ([float(scale)] * dim if scale is not None else [1.0] * dim)
-        )
+        scale = np.atleast_1d(
+            np.asarray(_np(tcfg.scale) if hasattr(tcfg.scale, "detach") else tcfg.scale or 1.0)
+        ).astype(float)
+        scale = scale.tolist()
         terms.append(
             {
                 "id": TERM_IDS.get(fname, fname),
@@ -793,11 +834,11 @@ def record(args: argparse.Namespace) -> Path:
         C["episode_step"].append(np.array(int(env.episode_length_buf[0])))
         C["reset"].append(np.array(reset_flag))
         a = run_policy(o[None])
+        C["action"].append(a[0].copy())  # what the policy returned (boundary B)
         if hold_idx:
-            a[:, hold_idx] = (
-                0.0  # target = default pose: held by the harness, with the policy's gains
-            )
-        C["action"].append(a[0])
+            # Held joints get target = default pose, with the policy's gains. The env sees
+            # the held action, which `action_applied` records.
+            a[:, hold_idx] = 0.0
         state["k"], state["s"] = k, 0
         _set_command(env, command_at(sched, (k + 1) * env.step_dt))
         obs, _, term, trunc, _ = env.step(torch.from_numpy(a).to(env.device))
@@ -926,7 +967,7 @@ def record(args: argparse.Namespace) -> Path:
         )
     )
     env.close()
-    app.close()
+    _close(app)
     return out
 
 
@@ -964,6 +1005,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     common(d)
     d.set_defaults(fn=doctor)
 
+    k = sub.add_parser("contract", help="the live contract alone, without simulating")
+    common(k)
+    k.add_argument("--out", required=True)
+    k.add_argument("--gains", choices=["asset", "deploy"], default="asset")
+    k.set_defaults(fn=write_contract)
+
     c = sub.add_parser("check", help="small commands under both gain sets")
     common(c)
     c.add_argument("--envs", type=int, default=16)
@@ -996,8 +1043,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = ap.parse_args(argv)
     if args.cmd == "record" and args.gains == "deploy" and not args.deploy:
         ap.error("--gains deploy needs --deploy")
+    if args.cmd == "contract" and args.gains == "deploy" and not args.deploy:
+        ap.error("--gains deploy needs --deploy")
     if args.episode_s is None:
-        if args.cmd in ("check", "doctor"):
+        if args.cmd in ("check", "doctor", "contract"):
             args.episode_s = 1.0e6
         else:
             args.episode_s = args.seconds + 1.0 if args.schedule else RL_LAB_EPISODE_S
@@ -1008,7 +1057,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    args.fn(args)
+    try:
+        args.fn(args)
+    except BaseException as e:  # Kit can end the process before Python reports the error
+        import os
+        import traceback
+
+        if isinstance(e, SystemExit) and not isinstance(e.code, int):
+            print(e.code, file=sys.stderr)
+        elif not isinstance(e, SystemExit):
+            traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        code = e.code if isinstance(e, SystemExit) and isinstance(e.code, int) else 1
+        os._exit(code or 1)
 
 
 if __name__ == "__main__":

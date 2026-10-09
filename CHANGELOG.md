@@ -3,8 +3,13 @@
 ## Unreleased
 
 * The Isaac Lab recorder (`gaitkeeper.recorders.isaaclab`, `tools/record_isaaclab.py`):
-  `doctor`, `check` and `record` for unitree_rl_lab's G1 velocity policy. Untested on a
-  GPU so far.
+  `doctor`, `check`, `contract` and `record` for unitree_rl_lab's G1 velocity policy. Run
+  on a GPU once (STATUS.md). Fixes from that run: the app launcher is kept alive, output is
+  flushed before Kit ends the process, errors exit non-zero, a reset starts from a zero
+  command, observation scales are read as arrays, held joints are kept out of `action`,
+  and the golden pushes are 150 N for 0.1 s.
+* `tools/gpu/setup_runpod.sh`: apt packages for Vulkan and X, flatdict built without
+  isolation, install checks by package name.
 * `tools/gpu/setup_runpod.sh` and docs/GPU_SESSION.md for the session that runs it.
 * `tools/e4.py --frictionless`, and `tools/calibrate_floor.py --mjcf` for traces from an
   engine with no MuJoCo model.

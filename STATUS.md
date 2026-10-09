@@ -172,27 +172,36 @@ show that PhysX is one.
 
 ## What is left
 
-**Isaac Lab recorder, and the GPU session it needs.** Written, not yet run:
-`gaitkeeper.recorders.isaaclab` (`tools/record_isaaclab.py`) with `doctor` (a smoke
-test), `check` (small commands under both gain sets) and `record` (golden traces in the
-mjlab recorder's schema, plus the live contract and what PhysX simulated). Its CPU parts
-are tested; the Isaac parts have never touched a GPU, so expect fixes on the first run.
-`tools/gpu/setup_runpod.sh` installs the pinned stack (Isaac Sim 5.1.0, Isaac Lab 2.3.0,
-unitree_rl_lab 4960b84, the G1 USD) and runs `doctor`. The commands, in order, are in
-docs/GPU_SESSION.md. One GPU with 16 GB or more and RT cores; roughly 3 to 5 GPU hours
-including setup, about 1 hour of that simulation.
+**Isaac Lab: first GPU session done (2026-10-09).** One A40 on RunPod, about an hour,
+Isaac Sim 5.1.0, Isaac Lab 2.3.0 (`isaaclab` 0.47.2), unitree_rl_lab 4960b84, G1 USD from
+unitree_model at 323e350. `doctor`, `check` and `record` ran after five fixes to the
+recorder (listed in the changelog). What it measured:
 
-1. Small command check, about 0.25 h: which gains were trained, and whether the dead
-   zone exists on the source physics.
-2. Golden traces, 3 seeds, and the issue 145 tour (`src/gaitkeeper/data/issue145_tour.yaml`,
-   3 seeds, with and without punches). Then `gaitkeeper verify` on CPU. Agreement there is
-   the only path to `POLICY_UNDER_TASK` for issue 145.
-3. E4 on PhysX: stock at 5 ms, ankle armature 0.01 above stock at 5 ms, stock at 2.5 ms and
-   2 ms, policy step held at 0.02 s. On CPU, `python tools/e4.py --frictionless` against
-   unitree_mujoco's G1. The bar already fixed, before any PhysX data: ankles within 20% of
-   -0.01 and the fit explained. Then `tools/calibrate_floor.py --mjcf` on the Isaac traces.
-   That floor includes the difference between the USD and the MJCF, so it is an upper
-   bound. Until it exists, D on an Isaac trace cannot give `PHYSICS`.
+* **Gains.** With deploy.yaml's gains the shipped policy reproduces the MuJoCo numbers in
+  its own simulator: 0.21 m/s for 0.25, 0.485 m/s for 0.5, no motion for 0.15 m/s forward,
+  no turn for 0.2 rad/s in place. With the training config's gains at 4960b84 (arm damping
+  1.0 where deploy.yaml has 10) 14 of 16 envs fall at 0.5 m/s. So the policy was trained
+  with gains like deploy.yaml's, not the asset config at that commit. Goldens use
+  deploy.yaml's gains.
+* **Mapping.** `verify` of the Isaac golden against deploy.yaml: B, A and C pass (L2). The
+  deployed observation and action mapping is the one the policy was trained with.
+* **Issue 145.** The tour in Isaac Lab, three seeds: no forward motion for 0.15 and 0.1 m/s,
+  no turn for 0.2 rad/s in place, 1.0 m for the 0.3 m/s leg, and a fall at every 600 N
+  punch. Same as MuJoCo. The score is the policy's under that task, not the harness's.
+  The tour traces were recorded with held arms written into `action`, so `verify` on them
+  fails B; fixed in the recorder (the raw policy output is `action` now), not re-recorded.
+* **E4 on PhysX.** Ankle armature change recovered as -0.0096 to -0.0097 for -0.01 (passes
+  the 20% bar); the shared-term fit is not explained (damping residual 1.2e-2), so the
+  result is detection only. 16 of 29 joints fit; 13 left out.
+* **Floor.** Calibrated against frictionless unitree_mujoco with the PhysX armature: worst
+  joint 1.7 N m (right knee), root 360 N / 122 N m. The root number is the USD and MJCF
+  disagreeing, not PhysX; not committed to floors.json. D on Isaac traces stays
+  uncalibrated until there is an MJCF made from the same USD.
+* **State check.** PhysX joint positions do not follow h times either velocity exactly
+  (median error 1e-4 rad, up to 0.07 near contacts): its position iterations correct
+  them. The trace records this as convention `neither`.
+
+The traces are not published: their license waits on unitree_rl_lab issue 149.
 
 **More source engines.** A floor per engine, from traces recorded in that
 engine against its own model. mjlab is the only one calibrated.

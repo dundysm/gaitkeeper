@@ -5,8 +5,9 @@ MuJoCo, with no trace from the simulator it was trained in. This session records
 traces. It is the only way to get `POLICY_UNDER_TASK` (or `PHYSICS`) for unitree_rl_lab
 issue 145, and to calibrate a boundary D floor for PhysX.
 
-The Isaac code (`gaitkeeper.recorders.isaaclab`) has not run on a GPU yet. Expect the
-first hour to go to fixing it against the live API; `doctor` is there to find that early.
+First run: 2026-10-09 on an A40 (RunPod, `runpod/pytorch` Ubuntu 22.04 image, driver 570,
+the container started with `NVIDIA_DRIVER_CAPABILITIES=all` for Vulkan). Setup took about
+15 minutes and the whole session about an hour. STATUS.md has what it measured.
 
 ## Machine
 
@@ -34,7 +35,9 @@ python $GK/tools/record_isaaclab.py doctor --usd $USD --onnx $ONNX
 
 which builds the task with two envs, steps it, and checks 29 joints, a 480-wide
 observation that matches the ONNX input, and implicit actuators only. It prints
-`doctor: ok` or what is wrong. Isaac Sim asks to accept its EULA on the first start.
+`doctor: ok` or what is wrong. Isaac Sim asks to accept its EULA on every start unless
+`OMNI_KIT_ACCEPT_EULA=YES` is set; read the EULA, then add that line to
+`/workspace/gaitkeeper_gpu.env`.
 
 ## 2. Small-command check (about 15 min)
 
@@ -50,21 +53,22 @@ whether it stands still at 0.15 m/s forward (as it does in MuJoCo), and how fast
 for 0.2 rad/s in place (MuJoCo: 0.02). That settles two things: which gains the policy
 was trained with, and whether the dead zone is the policy's or MuJoCo's.
 
-Use the gain set that walks for everything below (`--gains asset` is the training
-config and the default; add `--gains deploy --deploy $DEPLOY` if only deploy.yaml walks).
+Use the gain set that walks for everything below. For the shipped G1 policy that is
+deploy.yaml's (the asset config's arm damping makes it fall), so add `--gains deploy` to
+every `record` command below.
 
 ## 3. Golden traces (about 10 min)
 
 ```bash
 for s in a:0 b:1 c:2; do
-  python $GK/tools/record_isaaclab.py record --onnx $ONNX --deploy $DEPLOY --usd $USD \
+  python $GK/tools/record_isaaclab.py record --onnx $ONNX --deploy $DEPLOY --usd $USD --gains deploy \
       --seed ${s#*:} --out runs/isaac_golden_${s%%:*}
 done
 ```
 
 36 s each, the rl_lab schedule (every command inside deploy.yaml's limits, small
-commands, in-place yaw, 14 s of walking while turning, one reset at 24 s) and two 300 N
-pushes. Each prints a state check and the excitation items it lacks; an item missing on
+commands, in-place yaw, 14 s of walking while turning, one reset at 24 s) and two 150 N
+pushes (0.1 s, about the training pushes). Each prints a state check and the excitation items it lacks; an item missing on
 all three seeds means the schedule needs to change, not the seed.
 
 ## 4. The issue 145 tour (about 10 min)
@@ -74,11 +78,11 @@ arms held at the default pose, then 600 N punches on the torso every 3 s from 27
 
 ```bash
 for s in 0 1 2; do
-  python $GK/tools/record_isaaclab.py record --onnx $ONNX --deploy $DEPLOY --usd $USD \
+  python $GK/tools/record_isaaclab.py record --onnx $ONNX --deploy $DEPLOY --usd $USD --gains deploy \
       --seed $s --schedule $GK/src/gaitkeeper/data/issue145_tour.yaml --seconds 34 \
       --hold arms --punch-force 600 --punch-first 27 --punch-every 3 --punch-dur 0.1 \
       --out runs/isaac_tour_s$s
-  python $GK/tools/record_isaaclab.py record --onnx $ONNX --deploy $DEPLOY --usd $USD \
+  python $GK/tools/record_isaaclab.py record --onnx $ONNX --deploy $DEPLOY --usd $USD --gains deploy \
       --seed $s --schedule $GK/src/gaitkeeper/data/issue145_tour.yaml --seconds 34 \
       --hold arms --no-pushes --out runs/isaac_tour_nopunch_s$s
 done
@@ -89,7 +93,7 @@ done
 Same schedule and seed; the policy step stays 0.02 s.
 
 ```bash
-R="python $GK/tools/record_isaaclab.py record --onnx $ONNX --deploy $DEPLOY --usd $USD --seed 0"
+R="python $GK/tools/record_isaaclab.py record --onnx $ONNX --deploy $DEPLOY --usd $USD --gains deploy --seed 0"
 $R --sim-dt 0.005  --out runs/e4_stock_5ms
 $R --sim-dt 0.005  --ankle-armature-delta 0.01 --out runs/e4_ankle_5ms
 $R --sim-dt 0.0025 --out runs/e4_stock_2p5ms

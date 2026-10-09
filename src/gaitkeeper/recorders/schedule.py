@@ -52,9 +52,11 @@ RL_LAB_SCHEDULE: list[tuple[float, float, float, float]] = [
     (35.0, 0.0, 0.0, 0.0),
 ]
 RL_LAB_EPISODE_S = 24.0
+# 15 N s each, about the 0.5 m/s velocity pushes the policy was trained with. 300 N for
+# 0.15 s (the mjlab pushes) knocks this policy over in Isaac Lab.
 RL_LAB_PUSHES: list[tuple[float, float, str, tuple[float, float, float]]] = [
-    (12.0, 0.15, "torso_link", (0.0, 300.0, 0.0)),  # sideways while walking and turning
-    (33.5, 0.15, "torso_link", (-300.0, 0.0, 0.0)),  # backward while walking forward and turning
+    (12.0, 0.1, "torso_link", (0.0, 150.0, 0.0)),  # sideways while walking and turning
+    (33.5, 0.1, "torso_link", (-150.0, 0.0, 0.0)),  # backward while walking forward and turning
 ]
 
 

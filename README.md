@@ -222,9 +222,10 @@ no license); the files are fetched for local use, not redistributed. The directo
 
 The source engine for every attribution so far is mjlab 1.2.0 on mujoco_warp
 3.5.0. Nothing has been recorded in Isaac Lab or PhysX yet, so no Isaac source
-is calibrated and nothing about issue 145 goes past L1. The Isaac Lab recorder is
-written and waits for a GPU session
-([docs/GPU_SESSION.md](https://github.com/dundysm/gaitkeeper/blob/main/docs/GPU_SESSION.md)). See
+is calibrated. A first Isaac Lab session (2026-10-09) recorded golden traces of the
+unitree_rl_lab G1 policy in its training simulator: deploy.yaml's mapping passes against
+them, and the policy fails the issue 145 tour there too (no motion for small commands, a
+fall at every punch). See
 [STATUS.md](https://github.com/dundysm/gaitkeeper/blob/main/STATUS.md) for what works, what was measured and what is left.
 
 <details>

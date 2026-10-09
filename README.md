@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="gaitkeeper: why does a walking policy that works in training fail in a second simulator?" width="900">
+  <img src="https://raw.githubusercontent.com/dundysm/gaitkeeper/main/docs/assets/banner.svg" alt="gaitkeeper: why does a walking policy that works in training fail in a second simulator?" width="900">
 </p>
 
 <p align="center">
   <a href="https://github.com/dundysm/gaitkeeper/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dundysm/gaitkeeper/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3776ab">
   <img alt="MuJoCo on CPU" src="https://img.shields.io/badge/MuJoCo-CPU-1f6feb">
-  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2ea043"></a>
-  <a href="STATUS.md"><img alt="Status: early" src="https://img.shields.io/badge/status-early-d29922"></a>
+  <a href="https://github.com/dundysm/gaitkeeper/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2ea043"></a>
+  <a href="https://github.com/dundysm/gaitkeeper/blob/main/STATUS.md"><img alt="Status: early" src="https://img.shields.io/badge/status-early-d29922"></a>
 </p>
 
 A humanoid locomotion policy that walks in the simulator it was trained in often
@@ -23,7 +23,7 @@ different things can be wrong, and they need different fixes:
 gaitkeeper tells them apart, and says how much evidence backs the answer.
 
 <p align="center">
-  <img src="docs/assets/dead-zone.gif" alt="Two G1 robots in MuJoCo. Left: commanded 0.15 m/s forward, it stands still. Right: commanded 0.50 m/s, it walks at 0.48 m/s." width="808">
+  <img src="https://raw.githubusercontent.com/dundysm/gaitkeeper/main/docs/assets/dead-zone.gif" alt="Two G1 robots in MuJoCo. Left: commanded 0.15 m/s forward, it stands still. Right: commanded 0.50 m/s, it walks at 0.48 m/s." width="808">
   <br>
   <sub>The official unitree_rl_lab G1 policy in unitree_mujoco, rendered from gaitkeeper's runner
   (<code>tools/render_readme_media.py</code>). Below about 0.2 m/s it stands still. A waypoint tour is
@@ -33,7 +33,7 @@ gaitkeeper tells them apart, and says how much evidence backs the answer.
 ## How it decides
 
 <p align="center">
-  <img src="docs/assets/boundaries.svg" alt="Boundaries A to D, from a golden trace recorded in the training simulator: A signals to observation, B observation to action, C action to effort, D effort to next state." width="900">
+  <img src="https://raw.githubusercontent.com/dundysm/gaitkeeper/main/docs/assets/boundaries.svg" alt="Boundaries A to D, from a golden trace recorded in the training simulator: A signals to observation, B observation to action, C action to effort, D effort to next state." width="900">
 </p>
 
 It reads the policy's contract from the exported files, with the source of
@@ -60,7 +60,7 @@ does, labeled as a behavioral finding under stated assumptions, not a cause.
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install -e ".[sim]"
+pip install "gaitkeeper[sim]"
 gaitkeeper demo
 ```
 
@@ -184,9 +184,12 @@ reads the training config at a commit, not the run that produced the policy.
 ## Install
 
 ```bash
-pip install -e ".[sim]"            # runner, check, envelope, task, demo (MuJoCo)
-pip install -e ".[dev]"            # tests and lint
-pip install -e ".[record-mjlab]"   # recorder (mjlab 1.2.0, MuJoCo 3.5.0, CPU is enough)
+pip install "gaitkeeper[sim]"            # runner, check, envelope, task, demo (MuJoCo)
+pip install gaitkeeper                   # contracts and trace comparison only
+
+git clone https://github.com/dundysm/gaitkeeper && cd gaitkeeper
+pip install -e ".[sim,dev]"              # from source, with tests and lint
+pip install -e ".[record-mjlab]"         # recorder (mjlab 1.2.0, MuJoCo 3.5.0, CPU is enough)
 ```
 
 Python 3.10 or newer. Reading contracts and comparing traces needs only the
@@ -219,7 +222,7 @@ are fetched for local use, not redistributed. The directory is
 The source engine for every attribution so far is mjlab 1.2.0 on mujoco_warp
 3.5.0. Nothing has been recorded in Isaac Lab or PhysX yet, so no Isaac source
 is calibrated and nothing about issue 145 goes past L1. See
-[STATUS.md](STATUS.md) for what works, what was measured and what is left.
+[STATUS.md](https://github.com/dundysm/gaitkeeper/blob/main/STATUS.md) for what works, what was measured and what is left.
 
 <details>
 <summary><b>What the tests and the measurements show</b></summary>
@@ -386,7 +389,7 @@ controller assumptions they rest on and are evidence L1 at most.
 
 Every number above comes from cases built alongside the comparator. If you have a harness
 of your own, a few of its logs, with labels you seal before sending, are the most useful
-contribution: [docs/BLIND_TEST.md](docs/BLIND_TEST.md) describes the format and the
+contribution: [docs/BLIND_TEST.md](https://github.com/dundysm/gaitkeeper/blob/main/docs/BLIND_TEST.md) describes the format and the
 protocol, and `tools/blind.py` scores only against the committed hashes. Start with a
 [blind test issue](https://github.com/dundysm/gaitkeeper/issues/new?template=blind-test.md).
 Results are published whatever they are.

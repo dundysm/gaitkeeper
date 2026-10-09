@@ -1,0 +1,51 @@
+name: release
+
+# Publishes to PyPI when a tag like v0.1.0 is pushed, with PyPI trusted publishing:
+# no token is stored in this repository. One-time setup on pypi.org, under
+# "Publishing" > "Add a new pending publisher": project gaitkeeper, owner dundysm,
+# repository gaitkeeper, workflow release.yml, environment pypi.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Tag matches the package version
+        run: |
+          v=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('src/gaitkeeper/__init__.py').read())[1])")
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, package $v"; exit 1; }
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check --strict dist/*
+      - name: The wheel installs and runs
+        run: |
+          pip install dist/*.whl
+          gaitkeeper --version
+          gaitkeeper fetch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

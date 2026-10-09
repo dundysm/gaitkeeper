@@ -162,7 +162,9 @@ show that PhysX is one.
   commits. `gaitkeeper fetch` says so and downloads them for local use. They
   are not redistributed from this repository. unitree_mujoco and MuJoCo
   Menagerie are BSD-3-Clause.
-* The golden traces (about 126 MB each) are not published. Tests that need
+* The golden traces (about 126 MB each) are not published yet.
+  `tools/publish_golden.py` puts them in a Hugging Face dataset and pins them
+  for `gaitkeeper fetch golden`; it waits on a license choice. Tests that need
   them skip.
 * Two counterfactual jobs at 4 workers each were killed on a machine with
   15 GB of RAM. One heavy mjlab job at a time is the working limit.
@@ -210,13 +212,18 @@ works.
 
 **Unseen harnesses.** The development logs cannot answer this. It needs
 harness logs that were not used to build the comparator, with labels that
-were fixed before looking at the output.
+were fixed before looking at the output. The protocol and the tooling exist
+(docs/BLIND_TEST.md, `tools/blind.py`, a blind test issue template); no
+submissions yet.
 
 **Drafts, not posted.** Notes on the `efferent` log format, a reply to
 unitree_rl_lab issue 145, and a list of exporter keys. None of them are in
 this repository, and none of them have been sent.
 
-**Open decisions.** The PyPI name `gaitkeeper` is generic and easy to miss.
-Where the golden traces and the development logs should live, if they are
-published at all. Whether to ask Unitree before a demo that downloads the
-two unlicensed policy files, which the fetch command already labels.
+**Release.** 0.1.0 is ready for PyPI: `.github/workflows/release.yml`
+publishes on a `v*` tag through trusted publishing, after a one-time pending
+publisher is added on pypi.org.
+
+**Open decisions.** The license for the published golden traces, which
+contain the outputs of a policy whose repository has no license file. An
+issue asking Unitree to add one is drafted, not posted.

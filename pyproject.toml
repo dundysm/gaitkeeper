@@ -1,16 +1,38 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "gaitkeeper"
-version = "0.0.1"
-description = "Check a locomotion policy's deployment contract against ground truth recorded in its training simulator."
+dynamic = ["version"]
+description = "Find why a humanoid locomotion policy fails between simulators: contract, physics, or task."
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [{ name = "Dundy Pasupuleti", email = "dundysm@gmail.com" }]
+keywords = ["robotics", "humanoid", "locomotion", "reinforcement-learning", "mujoco", "isaac-lab", "mjlab", "sim2sim", "sim-to-real"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = ["numpy>=1.24", "pyyaml>=6", "onnxruntime>=1.16"]
+
+[project.urls]
+Homepage = "https://github.com/dundysm/gaitkeeper"
+Source = "https://github.com/dundysm/gaitkeeper"
+Issues = "https://github.com/dundysm/gaitkeeper/issues"
+Changelog = "https://github.com/dundysm/gaitkeeper/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "ruff>=0.4", "onnx>=1.15"]
@@ -22,6 +44,9 @@ record-mjlab = ["mjlab==1.2.0", "mujoco==3.5.0", "mujoco-warp==3.5.0", "warp-lan
 
 [project.scripts]
 gaitkeeper = "gaitkeeper.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "gaitkeeper.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

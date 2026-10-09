@@ -547,7 +547,10 @@ def _floor_warning(mjcf: str) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from . import __version__
+
     ap = argparse.ArgumentParser(prog="gaitkeeper")
+    ap.add_argument("--version", action="version", version=f"gaitkeeper {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def contract_args(p: argparse.ArgumentParser) -> None:

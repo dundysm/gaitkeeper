@@ -165,7 +165,9 @@ difference into a cause).
 Torque limits come from the MJCF unless `--limits contract`. A field the
 contract takes from no source prints `CONTROLLER_ASSUMED`. `--preset` fills
 named training facts (for example
-`unitree_rl_lab_g1_29dof_velocity@4960b84`) with provenance `preset`.
+`unitree_rl_lab_g1_29dof_velocity@4960b84`) with provenance `preset`. A
+controller field from a preset still prints `CONTROLLER_ASSUMED`: the preset
+reads the training config at a commit, not the run that produced the policy.
 
 ## What the tests show
 

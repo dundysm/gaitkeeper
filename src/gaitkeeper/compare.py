@@ -1086,10 +1086,12 @@ def verify(trace: Trace, contract: Contract, policy: Any = None) -> Report:
             "control.actuators.pd_period",
             "control.actuators.integrator",
         )
-        if contract.prov(p).source in ("unknown", "default")
+        if contract.prov(p).source in ("unknown", "default", "preset")
     ]
     if unknown:
-        findings.append(f"CONTROLLER_ASSUMED: {unknown} not stated by the contract")
+        findings.append(
+            f"CONTROLLER_ASSUMED: {unknown} not stated by the contract or its source run"
+        )
     findings.extend(n for n in c.notes if n.startswith("LIMIT_DIFFERENCE_ACTIVE"))
     if label:
         evidence = "L1"

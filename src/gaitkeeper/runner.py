@@ -23,7 +23,7 @@ which case the model the source simulated is loaded (``models.load_model``).
 
 Torque limits come from the target MJCF unless ``limit_source="contract"``.
 Every result carries the controller line with provenance; any field taken
-from a default or unknown source raises CONTROLLER_ASSUMED.
+from a default, preset or unknown source raises CONTROLLER_ASSUMED.
 """
 
 from __future__ import annotations
@@ -308,7 +308,9 @@ class Runner:
             p = c.prov(path)
             src = p.source if v is not None else "unknown"
             lines[k] = {"value": v, "from": src, "detail": p.detail}
-            if src in ("unknown", "default"):
+            # A preset is read from the training config at a commit, not from the run that
+            # produced this policy file, so it does not confirm the controller either.
+            if src in ("unknown", "default", "preset"):
                 assumed.append(k)
         if b is not None:
             lines["simulated"] = {

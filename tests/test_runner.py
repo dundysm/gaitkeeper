@@ -51,7 +51,9 @@ def test_preset_names_the_controller_and_explicit_zoh_changes_the_step(url):
     apply_preset(c, PRESET)
     r = _runner(c)
     ctl = r.controller("native_implicit")
-    assert not ctl["CONTROLLER_ASSUMED"] and ctl["kind"]["from"] == "preset"
+    # a preset names the controller but does not confirm it
+    assert ctl["CONTROLLER_ASSUMED"] and ctl["kind"]["from"] == "preset"
+    assert ctl["assumed"] == ["kind", "pd_period", "integrator", "torque_limit_at"]
     m, d, b = r.build(RunConfig(), "explicit_zoh")
     assert b.timestep == pytest.approx(0.005 / 3) and b.pd_every == 3 and b.substeps == 12
     assert "changed from 2 ms to 1.667 ms" in b.timestep_note

@@ -154,9 +154,6 @@ the recorder fails on Isaac Lab API changes, budget one more session.
 
 ## Open, CPU only
 
-* The fragility and envelope outputs in `runs/step3` predate two rule changes
-  (S17b drift for slow complex pairs, scenario commands clear of the dead zone
-  edge); rerun before quoting them.
 * The armature search abstains on most joints when the analysis model has
   joint friction the source lacks; a model with friction on both sides is
   needed for those fits. Research only.

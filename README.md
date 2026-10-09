@@ -231,10 +231,15 @@ committed):
 * Envelope, unitree_rl_lab G1 policy on unitree_mujoco (`runs/step3`): dead
   zone vx 0.20 (+) and 0.15 (-), vy 0.25, no in-place turning; yaw while
   walking tracks 67% to 73% inside the limit range; the vy kick hysteresis
-  above; trained kicks survived on 10 of 10 seeds, punches on 0 of 10. Fragility: friction 2.0, softer contacts (stand drift) and kp x0.8
-  (fwd + yaw) miss the bar; armature 0 and a 5 ms step under python_pd are
-  numerical. The mjlab G1 policy has only its by-design 0.05 dead zone, tracks
-  yaw while walking at 74% to 99% and survives 2 of 10 punch runs.
+  above; trained kicks survived on 10 of 10 seeds, punches on 0 of 10. The
+  lateral and in-place yaw scenarios are NONE: no tracked command sits 1.25
+  times past the dead zone edge inside the limit range (vy edge 0.25, limit
+  0.30). Fragility: friction 2.0 (stand drift, fwd + yaw), softer contacts
+  (stand drift) and kp x0.8 (fwd + yaw) miss the bar; armature 0 and a 5 ms
+  step under python_pd are numerical (S17a and S17b fire); S17b passes at 5 ms
+  under native_implicit. The mjlab G1 policy has only its by-design 0.05 dead
+  zone, tracks yaw while walking at 74% to 99% and survives 2 of 10 punch
+  runs; its rerun under the new rules is unchanged.
 * S17b at a 5 ms step (unitree_rl_lab policy, unitree_mujoco G1): the complex
   pair at modulus 1.0001 is a real slow mode of the linearized standing
   system, not numerical. It is the same for finite difference steps 1e-4 to

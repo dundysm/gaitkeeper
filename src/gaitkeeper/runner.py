@@ -825,11 +825,11 @@ class Runner:
                 "target_joint_names": list(self.names),
                 "body_names": [str(x) for x in bodies],
                 "physics_rows": "state before each mj_step",
-                "framework": {"name": "sim2sim runner", "mujoco": mujoco.__version__},
+                "framework": {"name": "gaitkeeper runner", "mujoco": mujoco.__version__},
                 "engine": f"mujoco {mujoco.__version__} ({res.controller['backend']})",
             }
         meta = {
-            "written_by_sim2sim_runner": True,
+            "written_by_gaitkeeper_runner": True,
             **extra,
             "controller": res.controller,
             "state_layout": {

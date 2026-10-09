@@ -1,6 +1,6 @@
-"""Record a golden trace in mjlab. Thin wrapper; see sim2sim.recorders.mjlab."""
+"""Record a golden trace in mjlab. Thin wrapper; see gaitkeeper.recorders.mjlab."""
 
-from sim2sim.recorders.mjlab import main
+from gaitkeeper.recorders.mjlab import main
 
 if __name__ == "__main__":
     main()

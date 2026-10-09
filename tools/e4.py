@@ -13,9 +13,9 @@ import json
 import sys
 from pathlib import Path
 
-from sim2sim.contract import Contract
-from sim2sim.e4 import e4
-from sim2sim.trace import Trace
+from gaitkeeper.contract import Contract
+from gaitkeeper.e4 import e4
+from gaitkeeper.trace import Trace
 
 
 def main() -> int:

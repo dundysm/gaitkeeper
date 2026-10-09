@@ -2,7 +2,7 @@ import json
 
 import numpy as np
 
-from sim2sim.cli import main
+from gaitkeeper.cli import main
 
 
 def test_verify_exit_codes(tmp_path, clean_log, files, harness):

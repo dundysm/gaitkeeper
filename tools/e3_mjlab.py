@@ -17,12 +17,12 @@ from typing import Any
 
 import numpy as np
 
-from sim2sim.compare import TOLERANCE_CLASSES, Report, verify
-from sim2sim.contract import Contract, compare_contracts
-from sim2sim.inject import Harness, defects, history5, judge
-from sim2sim.policy import OnnxPolicy
-from sim2sim.readers.mjlab_export import read_mjlab_export
-from sim2sim.trace import Trace
+from gaitkeeper.compare import TOLERANCE_CLASSES, Report, verify
+from gaitkeeper.contract import Contract, compare_contracts
+from gaitkeeper.inject import Harness, defects, history5, judge
+from gaitkeeper.policy import OnnxPolicy
+from gaitkeeper.readers.mjlab_export import read_mjlab_export
+from gaitkeeper.trace import Trace
 
 DIFF_PATHS = [
     "timing.policy_dt",

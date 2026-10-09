@@ -1,7 +1,7 @@
 import numpy as np
 import synth
 
-from sim2sim.terms import (
+from gaitkeeper.terms import (
     ObservationBuilder,
     RawState,
     StateLayout,

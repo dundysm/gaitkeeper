@@ -8,22 +8,22 @@ import pytest
 from assets import GOLDEN_A, MENAGERIE_G1, MJLAB_ONNX, UMJ_G1, need
 from sources import concat, external, runner_trace, schedule_of
 
-from sim2sim import diagnose as D
-from sim2sim import residual as R
-from sim2sim.compare import verify
-from sim2sim.contract import Contract
-from sim2sim.counterfactual import (
+from gaitkeeper import diagnose as D
+from gaitkeeper import residual as R
+from gaitkeeper.compare import verify
+from gaitkeeper.contract import Contract
+from gaitkeeper.counterfactual import (
     GROUPS,
     fisher,
     golden_scenario,
     group_differs,
     swap_edit,
 )
-from sim2sim.inject import compose, physics_edit
-from sim2sim.models import load_model
-from sim2sim.policy import OnnxPolicy
-from sim2sim.task import TaskSpec
-from sim2sim.trace import Trace
+from gaitkeeper.inject import compose, physics_edit
+from gaitkeeper.models import load_model
+from gaitkeeper.policy import OnnxPolicy
+from gaitkeeper.task import TaskSpec
+from gaitkeeper.trace import Trace
 
 SEEDS6 = tuple(range(1, 7))
 DEAD_ZONE = TaskSpec(

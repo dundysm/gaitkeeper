@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from sim2sim.terms import (
+from gaitkeeper.terms import (
     RawState,
     StateLayout,
     TermContext,

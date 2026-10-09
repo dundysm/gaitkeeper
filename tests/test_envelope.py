@@ -1,4 +1,4 @@
-from sim2sim.envelope import Envelope, _dead, _dead_text, _pick, grids
+from gaitkeeper.envelope import Envelope, _dead, _dead_text, _pick, grids
 
 
 def _row(c, a, fell=None):

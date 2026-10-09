@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 from assets import GOLDEN_A, GOLDEN_B, GOLDEN_C, MJLAB_ONNX, UMJ_G1, need
 
-from sim2sim import residual as R
-from sim2sim.contract import Contract
-from sim2sim.inject import physics_edit
-from sim2sim.models import load_model
-from sim2sim.trace import Trace
+from gaitkeeper import residual as R
+from gaitkeeper.contract import Contract
+from gaitkeeper.inject import physics_edit
+from gaitkeeper.models import load_model
+from gaitkeeper.trace import Trace
 
 ENGINE = "mjlab 1.2.0 / mujoco_warp 3.5.0"
 
@@ -86,8 +86,8 @@ def test_injected_ankle_armature_sign_and_magnitude(delta):
 
 
 def _runner_trace(model, edit, backend="native_implicit", seconds=5.0):
-    from sim2sim.policy import OnnxPolicy
-    from sim2sim.runner import RunConfig, Runner
+    from gaitkeeper.policy import OnnxPolicy
+    from gaitkeeper.runner import RunConfig, Runner
 
     c = Contract.load(GOLDEN_A / "contract.live.yaml")
     sched = [(0.0, (0.0, 0.0, 0.0)), (1.0, (0.5, 0.0, 0.0)), (3.0, (0.3, 0.0, 0.5))]

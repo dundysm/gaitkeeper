@@ -4,8 +4,8 @@ Nothing here is vendored. ``data/fixtures.json`` pins each set to an upstream
 commit and lists its files with sha256; ``fetch`` downloads them from that
 commit into a local directory and refuses any file whose hash differs.
 
-The directory is ``$SIM2SIM_DATA`` when set, else ``$XDG_CACHE_HOME/sim2sim``
-(``~/.cache/sim2sim``).
+The directory is ``$GAITKEEPER_DATA`` when set, else ``$XDG_CACHE_HOME/gaitkeeper``
+(``~/.cache/gaitkeeper``).
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ import urllib.request
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
+
+from .env import env
 
 RAW = "https://raw.githubusercontent.com/{repo}/{commit}/{path}"
 
@@ -47,15 +49,17 @@ class FixtureSet:
 
 
 def data_dir() -> Path:
-    env = os.environ.get("SIM2SIM_DATA")
-    if env:
-        return Path(env).expanduser()
-    cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
-    return Path(cache) / "sim2sim"
+    v = env("DATA")
+    if v:
+        return Path(v).expanduser()
+    cache = Path(os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache"))
+    new, old = cache / "gaitkeeper", cache / "sim2sim"
+    # Files fetched before the rename stay usable without a second download.
+    return old if old.is_dir() and not new.exists() else new
 
 
 def manifest() -> dict[str, FixtureSet]:
-    text = resources.files("sim2sim").joinpath("data/fixtures.json").read_text()
+    text = resources.files("gaitkeeper").joinpath("data/fixtures.json").read_text()
     out = {}
     for name, s in json.loads(text)["sets"].items():
         out[name] = FixtureSet(
@@ -129,7 +133,7 @@ def require(name: str, root: Path | None = None) -> FixtureSet:
     s = get(name)
     if not s.present(root):
         raise FixtureError(
-            f"fixture set {name!r} is not in {s.dir(root)}; run `sim2sim fetch {name}` "
-            f"(or set SIM2SIM_DATA to a directory that has it)"
+            f"fixture set {name!r} is not in {s.dir(root)}; run `gaitkeeper fetch {name}` "
+            f"(or set GAITKEEPER_DATA to a directory that has it)"
         )
     return s

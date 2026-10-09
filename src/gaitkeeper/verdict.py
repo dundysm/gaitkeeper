@@ -332,7 +332,7 @@ def _none(ev: Evidence, common: list[str]) -> Decision:
             "L1",
             EXIT["UNDETERMINED"],
             "no reference: nominal fails",
-            next_step=["static checks (sim2sim check)", "a golden trace or harness log"],
+            next_step=["static checks (gaitkeeper check)", "a golden trace or harness log"],
             caveats=cav,
         )
     if ev.nominal is None:

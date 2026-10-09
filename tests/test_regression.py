@@ -7,15 +7,15 @@ deploy.yaml (@ 4960b84), unitree_rl_mjlab G1 policy (@ 1425b15).
 import pytest
 from assets import UMJ_G1, UMJLAB_G1, URL_G1, need
 
-from sim2sim.checks import s17a_margin, s17b_modes
-from sim2sim.readers.unitree_deploy import read_unitree_deploy
-from sim2sim.runner import RunConfig, Runner
+from gaitkeeper.checks import s17a_margin, s17b_modes
+from gaitkeeper.readers.unitree_deploy import read_unitree_deploy
+from gaitkeeper.runner import RunConfig, Runner
 
 
 @pytest.fixture(scope="module")
 def url():
     need(UMJ_G1, URL_G1 / "deploy.yaml")
-    from sim2sim.policy import OnnxPolicy
+    from gaitkeeper.policy import OnnxPolicy
 
     c, _ = read_unitree_deploy(URL_G1 / "deploy.yaml", URL_G1 / "policy.onnx")
     return Runner(c, UMJ_G1, OnnxPolicy(URL_G1 / "policy.onnx"))
@@ -83,7 +83,7 @@ def test_s17b_native_only_tipping_and_python_pd_armature_zero(url):
 
 def test_mjlab_policy_on_umj_walks_4_82_m():
     need(UMJ_G1, UMJLAB_G1 / "deploy.yaml")
-    from sim2sim.policy import OnnxPolicy
+    from gaitkeeper.policy import OnnxPolicy
 
     c, _ = read_unitree_deploy(UMJLAB_G1 / "deploy.yaml", UMJLAB_G1 / "policy.onnx")
     r = Runner(c, UMJ_G1, OnnxPolicy(UMJLAB_G1 / "policy.onnx"))

@@ -4,7 +4,7 @@ and the detection rate per boundary over every case with a known cause
 
 Cases:
 
-* the synthetic injection corpus (``sim2sim.inject.defects``) on the test
+* the synthetic injection corpus (``gaitkeeper.inject.defects``) on the test
   harness, checked by ``verify``;
 * the development set of harness logs from the unitree_rl_lab G1 deploy files
   (29 logs, labels below), checked by ``verify``;
@@ -20,7 +20,6 @@ mjlab trace) are reported from ``runs/step5`` but left out of the metric.
 
 import argparse
 import json
-import os
 import sys
 import tempfile
 from functools import partial
@@ -31,14 +30,15 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from assets import DATA, GOLDEN_A, MJLAB_ONNX, RUNS, UMJ_G1, URL_G1  # noqa: E402
 
-from sim2sim.compare import verify  # noqa: E402
-from sim2sim.contract import Contract  # noqa: E402
-from sim2sim.metrics import Case, score  # noqa: E402
+from gaitkeeper.compare import verify  # noqa: E402
+from gaitkeeper.contract import Contract  # noqa: E402
+from gaitkeeper.env import env  # noqa: E402
+from gaitkeeper.metrics import Case, score  # noqa: E402
 
 PRESET = "unitree_rl_lab_g1_29dof_velocity@4960b84"
 # The 29 development harness logs are not public; point --devset or
-# SIM2SIM_DEVSET at them. Without them the metric leaves the development set out.
-DEVSET = Path(os.environ.get("SIM2SIM_DEVSET", RUNS / "devset"))
+# GAITKEEPER_DEVSET at them. Without them the metric leaves the development set out.
+DEVSET = Path(env("DEVSET") or RUNS / "devset")
 
 # case: (boundary that must fail, substrings the named patterns must contain)
 DEVSET_LABELS = {
@@ -83,7 +83,7 @@ def _from_report(name, truth, rep) -> Case:
 def injection_cases() -> list[Case]:
     import synth
 
-    from sim2sim.inject import Harness, defects, history5
+    from gaitkeeper.inject import Harness, defects, history5
 
     truth_c, files = synth.make_contract(rounded=False), synth.make_contract(rounded=True)
     pol = synth.LinearPolicy()
@@ -108,10 +108,10 @@ def injection_cases() -> list[Case]:
 
 
 def devset_cases(logs: Path) -> list[Case]:
-    from sim2sim.policy import OnnxPolicy
-    from sim2sim.presets import apply_preset
-    from sim2sim.readers.unitree_deploy import read_unitree_deploy
-    from sim2sim.trace import Trace
+    from gaitkeeper.policy import OnnxPolicy
+    from gaitkeeper.presets import apply_preset
+    from gaitkeeper.readers.unitree_deploy import read_unitree_deploy
+    from gaitkeeper.trace import Trace
 
     c, _ = read_unitree_deploy(URL_G1 / "deploy.yaml", URL_G1 / "policy.onnx")
     apply_preset(c, PRESET)
@@ -143,13 +143,13 @@ def _from_diagnosis(name, truth, dg) -> Case:
 def physics_cases(workers: int | None) -> list[Case]:
     from sources import concat, external, runner_trace, schedule_of
 
-    from sim2sim import diagnose as D
-    from sim2sim import residual as R
-    from sim2sim.inject import compose, physics_edit
-    from sim2sim.models import load_model
-    from sim2sim.policy import OnnxPolicy
-    from sim2sim.task import TaskSpec
-    from sim2sim.trace import Trace
+    from gaitkeeper import diagnose as D
+    from gaitkeeper import residual as R
+    from gaitkeeper.inject import compose, physics_edit
+    from gaitkeeper.models import load_model
+    from gaitkeeper.policy import OnnxPolicy
+    from gaitkeeper.task import TaskSpec
+    from gaitkeeper.trace import Trace
 
     tr = Trace.load(GOLDEN_A)
     c = Contract.load(GOLDEN_A / "contract.live.yaml")

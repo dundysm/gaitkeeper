@@ -4,7 +4,7 @@ Runs inside the mjlab venv on CPU. Steps the training env with the shipped
 ONNX policy under an excitation schedule, writes the contract from live env
 objects, every physics step's state and effort, and the compiled model.
 
-    python -m sim2sim.recorders.mjlab --task Unitree-G1-Flat \
+    python -m gaitkeeper.recorders.mjlab --task Unitree-G1-Flat \
         --task-path /path/to/unitree_rl_mjlab --task-module src.tasks \
         --onnx policy.onnx --out runs/g1_golden
 """
@@ -629,7 +629,7 @@ def record(args: argparse.Namespace) -> Path:
         "obs_state_matches_last_substep_max_abs": gap,
         "excitation": [e.__dict__ for e in exc],
         "under_excited": [e.name for e in exc if not e.ok],
-        "written_by_sim2sim_runner": False,
+        "written_by_gaitkeeper_runner": False,
         "wall_time_s": wall,
         "mean_env_step_s": float(np.mean(tstep)),
     }

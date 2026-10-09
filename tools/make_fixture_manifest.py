@@ -1,7 +1,7 @@
-"""Write src/sim2sim/data/fixtures.json from local clones at the pinned commits.
+"""Write src/gaitkeeper/data/fixtures.json from local clones at the pinned commits.
 
 Each fixture set lists files by their path in the upstream repository, with
-sha256, so `sim2sim fetch` can download them from the commit and check them.
+sha256, so `gaitkeeper fetch` can download them from the commit and check them.
 Meshes are the ones the MJCF references, not the whole directory.
 
     python tools/make_fixture_manifest.py --unitree-rl-lab <clone> --unitree-rl-mjlab <clone> \\
@@ -15,7 +15,7 @@ import re
 import subprocess
 from pathlib import Path
 
-OUT = Path(__file__).parents[1] / "src" / "sim2sim" / "data" / "fixtures.json"
+OUT = Path(__file__).parents[1] / "src" / "gaitkeeper" / "data" / "fixtures.json"
 
 SETS = {
     "g1_rl_lab": {

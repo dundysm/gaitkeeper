@@ -6,9 +6,9 @@ import pytest
 import yaml
 from assets import UMJ_G1, URL_G1, need
 
-from sim2sim.checks import classify_modes, joint_inertia, pd_margin, s16_symmetry, s18_commands
-from sim2sim.readers.unitree_deploy import read_unitree_deploy
-from sim2sim.tables import G1_29_SDK
+from gaitkeeper.checks import classify_modes, joint_inertia, pd_margin, s16_symmetry, s18_commands
+from gaitkeeper.readers.unitree_deploy import read_unitree_deploy
+from gaitkeeper.tables import G1_29_SDK
 
 HINGE = """
 <mujoco><option timestep="{h}" integrator="Euler" gravity="0 0 0"/>
@@ -72,11 +72,11 @@ def test_s17b_open_case_rl_lab_umj_5ms():
     for every finite-difference step and scheme, and present at 2 ms with the same
     rate per second, so neither numerical nor a 5 ms effect. It is slow drift."""
     need(URL_G1 / "deploy.yaml", UMJ_G1)
-    from sim2sim.behavior import VARIANTS
-    from sim2sim.checks import s17b_modes, settle
-    from sim2sim.policy import OnnxPolicy
-    from sim2sim.presets import apply_preset
-    from sim2sim.runner import RunConfig, Runner
+    from gaitkeeper.behavior import VARIANTS
+    from gaitkeeper.checks import s17b_modes, settle
+    from gaitkeeper.policy import OnnxPolicy
+    from gaitkeeper.presets import apply_preset
+    from gaitkeeper.runner import RunConfig, Runner
 
     c = read_unitree_deploy(URL_G1 / "deploy.yaml", URL_G1 / "policy.onnx")[0]
     apply_preset(c, "unitree_rl_lab_g1_29dof_velocity@4960b84")

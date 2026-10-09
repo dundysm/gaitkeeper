@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 from assets import UMJ_G1, URL_G1, need
 
-from sim2sim.presets import apply_preset
-from sim2sim.readers.unitree_deploy import read_unitree_deploy
-from sim2sim.runner import External, Push, RunConfig, Runner, _divisor_step, load_schedule
+from gaitkeeper.presets import apply_preset
+from gaitkeeper.readers.unitree_deploy import read_unitree_deploy
+from gaitkeeper.runner import External, Push, RunConfig, Runner, _divisor_step, load_schedule
 
 PRESET = "unitree_rl_lab_g1_29dof_velocity@4960b84"
 
@@ -32,7 +32,7 @@ def url():
 
 
 def _runner(c):
-    from sim2sim.policy import OnnxPolicy
+    from gaitkeeper.policy import OnnxPolicy
 
     return Runner(c, UMJ_G1, OnnxPolicy(URL_G1 / "policy.onnx"))
 

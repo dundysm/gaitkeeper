@@ -1,6 +1,6 @@
 import numpy as np
 
-from sim2sim.trace import Trace, check_state_increments
+from gaitkeeper.trace import Trace, check_state_increments
 
 
 def test_state_increment_check_names_the_velocity_convention():

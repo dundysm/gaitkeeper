@@ -1,4 +1,4 @@
-# sim2sim
+# gaitkeeper
 
 Checks a locomotion policy's deployment against the training environment it
 came from, one boundary at a time, using a golden trace recorded in that
@@ -40,13 +40,13 @@ calibrated. See `STATUS.md`.
 
     python -m venv .venv && . .venv/bin/activate
     pip install -e .[sim]
-    sim2sim demo
+    gaitkeeper demo
 
 `demo` runs the issue 145 setup end to end on the CPU: unitree_rl_lab's G1
 velocity policy, as shipped, on unitree_mujoco's G1 scene, driven through a
 tour of small commands and in-place turns with the arms held, then 600 N
 punches. On first use it downloads the policy and the scene (about 20 MB,
-pinned commits, sha256 checked) into `~/.cache/sim2sim`. The run takes about
+pinned commits, sha256 checked) into `~/.cache/gaitkeeper`. The run takes about
 15 s on 8 cores. It prints the contract it read, the command response map
 with its dead zones, the task segment by segment, and the finding:
 
@@ -72,9 +72,9 @@ base install (numpy, pyyaml, onnxruntime).
 
 ## Third-party files
 
-Nothing third party is vendored. `sim2sim fetch` downloads pinned files from
+Nothing third party is vendored. `gaitkeeper fetch` downloads pinned files from
 their upstream repositories at fixed commits and checks each sha256
-(`src/sim2sim/data/fixtures.json`):
+(`src/gaitkeeper/data/fixtures.json`):
 
 | Set | Source | What |
 |---|---|---|
@@ -83,12 +83,12 @@ their upstream repositories at fixed commits and checks each sha256
 | `g1_unitree_mujoco` | unitree_mujoco @ 1eb6642 | G1 29 dof scene and meshes (BSD-3-Clause) |
 | `g1_menagerie` | mujoco_menagerie @ 0059d43 | Unitree G1 scene and meshes (BSD-3-Clause) |
 
-    sim2sim fetch                 # list the sets and whether they are present
-    sim2sim fetch all             # download every set
+    gaitkeeper fetch                 # list the sets and whether they are present
+    gaitkeeper fetch all             # download every set
 
 The two policy repositories had no license file at those commits; the files
 are fetched for local use, not redistributed. The directory is
-`$SIM2SIM_DATA` when set, else `~/.cache/sim2sim`.
+`$GAITKEEPER_DATA` when set, else `~/.cache/gaitkeeper`.
 
 ## Evidence levels
 
@@ -99,7 +99,7 @@ are fetched for local use, not redistributed. The directory is
 | L2 | conformant | Boundaries A to C match an independently recorded source trace on the covered states and channels. |
 | L3 | matched | L2, and the dynamics residual is at the calibrated floor on the measured channels. |
 
-"Verified" appears only at L2 or above. A trace written by sim2sim's own
+"Verified" appears only at L2 or above. A trace written by gaitkeeper's own
 runner never raises the level.
 
 ## Exit codes
@@ -108,7 +108,7 @@ runner never raises the level.
 CONTRACT, 2 INVALID_INPUT, 3 PHYSICS, 4 POLICY_UNDER_TASK, 5 UNDETERMINED (or
 L1 findings such as TASK_FAILURE_OBSERVED), 6 UNSUPPORTED. Every command exits
 2 with a one line message when an input is missing or unreadable
-(`SIM2SIM_DEBUG=1` shows the traceback), and warns when the MJCF has no floor.
+(`GAITKEEPER_DEBUG=1` shows the traceback), and warns when the MJCF has no floor.
 `demo` exits 0 when it ran.
 
 ## Use
@@ -117,44 +117,44 @@ L1 findings such as TASK_FAILURE_OBSERVED), 6 UNSUPPORTED. Every command exits
     python tools/record_mjlab.py --task-path <unitree_rl_mjlab> --onnx <policy.onnx> --out runs/g1_golden
 
     # contract from the exported files
-    sim2sim inspect --onnx <policy.onnx> --yaml <deploy.yaml> --out contract.yaml
+    gaitkeeper inspect --onnx <policy.onnx> --yaml <deploy.yaml> --out contract.yaml
 
     # verify a golden trace or a harness log against a contract
-    sim2sim verify runs/g1_golden --onnx <policy.onnx> --yaml <deploy.yaml>
-    sim2sim verify harness_log.npz --contract contract.yaml --policy <policy.onnx>
+    gaitkeeper verify runs/g1_golden --onnx <policy.onnx> --yaml <deploy.yaml>
+    gaitkeeper verify harness_log.npz --contract contract.yaml --policy <policy.onnx>
 
     # with a target: boundary D, the nominal closed loop and the model counterfactual
-    sim2sim verify runs/g1_golden --contract runs/g1_golden/contract.live.yaml \
+    gaitkeeper verify runs/g1_golden --contract runs/g1_golden/contract.live.yaml \
         --onnx <policy.onnx> --mjcf <scene.xml> --seeds 12
-    sim2sim residual runs/g1_golden --contract runs/g1_golden/contract.live.yaml --mjcf <scene.xml>
+    gaitkeeper residual runs/g1_golden --contract runs/g1_golden/contract.live.yaml --mjcf <scene.xml>
 
     # a task without a reference (L1 at most): schedule, held joints, punches
-    sim2sim task --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> \
+    gaitkeeper task --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> \
         --schedule tour.yaml --hold left_elbow_joint,right_elbow_joint \
         --push-every 3 --push-first 20 --push-force 600
 
     # Unitree deploy.yaml, read as what the robot runs (SDK tables: G1 29-DoF, H1)
-    sim2sim inspect --deploy <deploy.yaml> --onnx <policy.onnx>
+    gaitkeeper inspect --deploy <deploy.yaml> --onnx <policy.onnx>
 
     # closed loop in a target MJCF; every result prints the controller assumptions
-    sim2sim run --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> \
+    gaitkeeper run --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> \
         --command 0.5,0,0 --kick 3,0.5,0 --push 6,0,150,0,torso_link,0.1
 
     # checks S16, S17a, S17b, S18, S19, S21 and the command response map
-    sim2sim check --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> --scenario 0,0,0.2
-    sim2sim envelope --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml>
+    gaitkeeper check --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> --scenario 0,0,0.2
+    gaitkeeper envelope --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml>
 
     # behavior probes: standstill in the dead zone (two backends), after a kick,
     # yaw while walking, trained kicks and force punches over seeds, fragility sweep
-    sim2sim envelope --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> \
+    gaitkeeper envelope --deploy <deploy.yaml> --onnx <policy.onnx> --mjcf <scene.xml> \
         --push-seeds 10 --physics --json envelope.json
 
     # observation layout from a trace (exit 0 inferred, 3 partial or abstained)
-    sim2sim infer runs/g1_golden --json layout.json
-    sim2sim infer harness_log.npz --no-raw          # (obs, action) only
+    gaitkeeper infer runs/g1_golden --json layout.json
+    gaitkeeper infer harness_log.npz --no-raw          # (obs, action) only
 
     # deploy values against training values, per joint
-    sim2sim deviation --deploy <deploy.yaml> --reference runs/g1_golden/contract.live.yaml --trace runs/g1_golden
+    gaitkeeper deviation --deploy <deploy.yaml> --reference runs/g1_golden/contract.live.yaml --trace runs/g1_golden
 
 Runner backends: `native_implicit` (default; PD inside MuJoCo every step),
 `explicit_zoh` (torque held over the training `sim_dt`; the MuJoCo step is
@@ -170,9 +170,9 @@ named training facts (for example
 ## What the tests show
 
 `pytest` runs the unit suite on synthetic traces with a stand-in linear
-policy anywhere. Integration tests run on the fixtures (`sim2sim fetch all`)
+policy anywhere. Integration tests run on the fixtures (`gaitkeeper fetch all`)
 and on golden traces recorded with the mjlab recorder under `runs/`
-(`$SIM2SIM_RUNS`); each skips, naming what is missing, when its files are
+(`$GAITKEEPER_RUNS`); each skips, naming what is missing, when its files are
 absent. They show:
 
 * A harness log built correctly from the contract passes B, A and C, where
@@ -199,7 +199,7 @@ absent. They show:
   UNDETERMINED rather than PASS, including when such an invisible defect is
   present.
 * When two equally simple explanations fit, it names neither.
-* A trace written by sim2sim's own runner is labeled SELF_CONSISTENT and capped
+* A trace written by gaitkeeper's own runner is labeled SELF_CONSISTENT and capped
   at evidence L1.
 * The reader finds the rounded wrist action scale in the shipped deploy.yaml,
   and the recorded mjlab G1 golden trace passes against the contract read from

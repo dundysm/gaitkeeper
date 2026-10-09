@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 from assets import UMJ_G1, URL_G1, need
 
-from sim2sim.cli import main
-from sim2sim.infer import infer
-from sim2sim.trace import Trace
+from gaitkeeper.cli import main
+from gaitkeeper.infer import infer
+from gaitkeeper.trace import Trace
 
 WIDTHS = [3, 3, 2, 5]  # terms before the last action
 A = 5
@@ -115,7 +115,7 @@ def test_raw_state_labels_every_term(clean_log, files):
 
 
 def test_raw_state_names_a_world_frame_gyro(harness):
-    from sim2sim.inject import defects
+    from gaitkeeper.inject import defects
 
     d = next(d for d in defects() if d.name == "gyro in the world frame")
     r = infer(d.build(harness))

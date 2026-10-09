@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from assets import UMJ_G1, URL_G1, need
 
-from sim2sim.behavior import (
+from gaitkeeper.behavior import (
     VARIANTS,
     _dead_commands,
     contract_header,
@@ -21,9 +21,9 @@ from sim2sim.behavior import (
     stillness,
     yaw_walk,
 )
-from sim2sim.contract import Contract
-from sim2sim.envelope import Envelope
-from sim2sim.runner import Push, PushGenerator, RunConfig, Runner, ground_contacts
+from gaitkeeper.contract import Contract
+from gaitkeeper.envelope import Envelope
+from gaitkeeper.runner import Push, PushGenerator, RunConfig, Runner, ground_contacts
 
 BOX_ON_FLOOR = """
 <mujoco>
@@ -158,9 +158,9 @@ def test_variants_cover_the_plan_sweep():
 @pytest.fixture(scope="module")
 def url():
     need(UMJ_G1, URL_G1 / "deploy.yaml")
-    from sim2sim.policy import OnnxPolicy
-    from sim2sim.presets import apply_preset
-    from sim2sim.readers.unitree_deploy import read_unitree_deploy
+    from gaitkeeper.policy import OnnxPolicy
+    from gaitkeeper.presets import apply_preset
+    from gaitkeeper.readers.unitree_deploy import read_unitree_deploy
 
     c, _ = read_unitree_deploy(URL_G1 / "deploy.yaml", URL_G1 / "policy.onnx")
     apply_preset(c, "unitree_rl_lab_g1_29dof_velocity@4960b84")
@@ -210,7 +210,7 @@ def test_survives_trained_kicks_and_falls_to_punches(url):
 
 
 def test_armature_zero_demo(url):
-    from sim2sim.checks import s17a_margin, s17b_modes
+    from gaitkeeper.checks import s17a_margin, s17b_modes
 
     cfg = dict(model_edit=VARIANTS["armature 0"][0])
     pol = url.run(RunConfig(backend="python_pd", command=(0.5, 0, 0), **cfg))

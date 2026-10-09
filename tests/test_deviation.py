@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 from assets import UMJLAB_G1, need
 
-from sim2sim.deviation import compare
-from sim2sim.readers.mjlab_export import read_mjlab_export
-from sim2sim.readers.unitree_deploy import read_unitree_deploy
+from gaitkeeper.deviation import compare
+from gaitkeeper.readers.mjlab_export import read_mjlab_export
+from gaitkeeper.readers.unitree_deploy import read_unitree_deploy
 
 
 def test_mjlab_deploy_against_onnx_metadata():

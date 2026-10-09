@@ -10,11 +10,11 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from sim2sim.contract import Contract
-from sim2sim.models import load_model
-from sim2sim.policy import OnnxPolicy
-from sim2sim.runner import RunConfig, Runner
-from sim2sim.trace import Trace
+from gaitkeeper.contract import Contract
+from gaitkeeper.models import load_model
+from gaitkeeper.policy import OnnxPolicy
+from gaitkeeper.runner import RunConfig, Runner
+from gaitkeeper.trace import Trace
 
 Schedule = list[tuple[float, tuple[float, float, float]]]
 
@@ -68,7 +68,7 @@ def schedule_of(*episodes: tuple[Schedule, float]) -> list[list[float]]:
 def external(trace: Trace, path: Path, model: Path, edit, schedule: list[list[float]]) -> Trace:
     """Save as a golden trace from an independent source, with its compiled model."""
     trace.meta.update(
-        written_by_sim2sim_runner=False,
+        written_by_gaitkeeper_runner=False,
         schedule=schedule,
         framework={"name": "test source", "mujoco": mujoco.__version__},
     )

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from sim2sim.contract import SCHEMA, Contract
-from sim2sim.tables import G1_29_SDK
-from sim2sim.terms import StateLayout
-from sim2sim.trace import Trace
+from gaitkeeper.contract import SCHEMA, Contract
+from gaitkeeper.tables import G1_29_SDK
+from gaitkeeper.terms import StateLayout
+from gaitkeeper.trace import Trace
 
 T = 480
 DT = 0.02

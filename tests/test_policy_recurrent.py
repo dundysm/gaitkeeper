@@ -4,7 +4,7 @@ import pytest
 onnx = pytest.importorskip("onnx")
 from onnx import TensorProto, helper  # noqa: E402
 
-from sim2sim.policy import OnnxPolicy  # noqa: E402
+from gaitkeeper.policy import OnnxPolicy  # noqa: E402
 
 
 def _model(path):

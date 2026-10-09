@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from sim2sim.contract import SCHEMA, Contract, compare_values
-from sim2sim.readers.numtext import load_yaml_with_text, parse_csv_floats, resolution_of
+from gaitkeeper.contract import SCHEMA, Contract, compare_values
+from gaitkeeper.readers.numtext import load_yaml_with_text, parse_csv_floats, resolution_of
 
 
 @pytest.mark.parametrize(

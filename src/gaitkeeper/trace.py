@@ -23,7 +23,9 @@ from typing import Any
 
 import numpy as np
 
-TRACE_SCHEMA = "sim2sim/trace/v1"
+TRACE_SCHEMA = "gaitkeeper/trace/v1"
+# Traces written before the project was renamed from sim2sim.
+LEGACY_TRACE_SCHEMAS = ("sim2sim/trace/v1",)
 
 CONTROL_KEYS_REQUIRED = ("obs", "action", "command", "qpos", "qvel", "reset", "episode_step")
 CONTROL_KEYS_OPTIONAL = ("action_applied", "target", "effort", "obs_terms")
@@ -49,8 +51,11 @@ class Trace:
 
     @property
     def self_consistent_only(self) -> bool:
-        """True when the trace was written by sim2sim's own runner."""
-        return bool(self.meta.get("written_by_sim2sim_runner", False))
+        """True when the trace was written by gaitkeeper's own runner."""
+        return bool(
+            self.meta.get("written_by_gaitkeeper_runner", False)
+            or self.meta.get("written_by_sim2sim_runner", False)
+        )
 
     def obs_term(self, name: str) -> np.ndarray | None:
         return self.arrays.get(f"obs_terms/{name}")
@@ -116,6 +121,8 @@ class Trace:
             with np.load(path) as z:
                 arrays = {k: z[k] for k in z.files if k != "meta"}
                 meta = json.loads(str(z["meta"])) if "meta" in z.files else {}
+        if meta.get("schema") in LEGACY_TRACE_SCHEMAS:
+            meta["schema"] = TRACE_SCHEMA
         if meta.get("schema") != TRACE_SCHEMA:
             raise ValueError(
                 f"{path}: trace schema {meta.get('schema')!r}, expected {TRACE_SCHEMA!r}"

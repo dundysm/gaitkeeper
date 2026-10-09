@@ -6,10 +6,10 @@ import pytest
 from assets import GOLDEN_A, MJLAB_ONNX, UMJ_G1, URL_G1, need
 from sources import runner_trace
 
-from sim2sim.contract import Contract
-from sim2sim.e4 import e4
-from sim2sim.inject import compose, physics_edit
-from sim2sim.models import load_model
+from gaitkeeper.contract import Contract
+from gaitkeeper.e4 import e4
+from gaitkeeper.inject import compose, physics_edit
+from gaitkeeper.models import load_model
 
 BY_TYPE = {"hip": 0.004, "knee": 0.006, "ankle": 0.001}
 SCHED = [
@@ -43,8 +43,8 @@ def _traces(c, onnx, steps, ankle=True):
 def setup():
     """The unitree_rl_lab G1 with its training (asset) gains: kd / kp differs by motor."""
     need(UMJ_G1, URL_G1 / "deploy.yaml")
-    from sim2sim.presets import apply_preset
-    from sim2sim.readers.unitree_deploy import read_unitree_deploy
+    from gaitkeeper.presets import apply_preset
+    from gaitkeeper.readers.unitree_deploy import read_unitree_deploy
 
     c = read_unitree_deploy(URL_G1 / "deploy.yaml", URL_G1 / "policy.onnx")[0]
     apply_preset(c, "unitree_rl_lab_g1_29dof_velocity@4960b84")

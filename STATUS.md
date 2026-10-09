@@ -10,7 +10,7 @@ layout, action scale, gains, joint order), the two simulators disagree on the
 robot (mass, friction, armature, how the drive is integrated), or the policy
 itself does not do the task it is being asked to do.
 
-sim2sim separates those. It reads a contract from the exported files, with
+gaitkeeper separates those. It reads a contract from the exported files, with
 the source of every field. Against a golden trace recorded in the training
 simulator it checks one boundary at a time: the policy file on recorded
 inputs (B), each observation term rebuilt from raw state (A), the action
@@ -32,7 +32,7 @@ does. That is a behavioral finding under stated assumptions, not a cause.
 | L2 | conformant | Boundaries A to C match an independently recorded source trace on the covered states and channels. |
 | L3 | matched | L2, and the residual is at the calibrated floor on the measured channels. |
 
-"Verified" is only used at L2 or above. A trace written by sim2sim's own
+"Verified" is only used at L2 or above. A trace written by gaitkeeper's own
 runner never raises the level. L3 is agreement on what was measured, not a
 claim that two models are the same.
 
@@ -112,7 +112,7 @@ with two 300 N pushes, 12 seeds:
   `PHYSICS` localized to contact parameters, and adding 15 kg to the torso
   gives `PHYSICS` localized to mass and inertia, then to body masses.
 
-**Issue 145, from `sim2sim demo` (L1).** The shipped unitree_rl_lab G1
+**Issue 145, from `gaitkeeper demo` (L1).** The shipped unitree_rl_lab G1
 velocity policy on unitree_mujoco's G1 scene, arms held at the default pose,
 a tour of small commands and in-place turns, then 600 N punches. In this
 runner the policy stands still up to vx 0.20 forward and 0.15 backward, and
@@ -121,7 +121,7 @@ tracks 67% to 73% of the commanded rate inside the trained limit. On the
 tour, 3 of 3 seeds miss the bar: every small segment is a dead zone, the
 0.3 m/s leg is walked (about 0.26 m/s), and every seed falls about 0.4 s
 after the first punch. The finding is `TASK_FAILURE_OBSERVED /
-BEHAVIORAL_LIMITATION`, evidence L1, and `sim2sim task` exits 5. The caveats
+BEHAVIORAL_LIMITATION`, evidence L1, and `gaitkeeper task` exits 5. The caveats
 printed with it: a silent contract error is not excluded, and nothing is
 attributed. It does not say the benchmark's harness is right or wrong. That
 needs a golden trace from the training simulator under the same commands.
@@ -159,7 +159,7 @@ show that PhysX is one.
 * Runner results assume the controller the contract describes. A field taken
   from no source is printed as `CONTROLLER_ASSUMED`.
 * The two Unitree policy repositories had no license file at the pinned
-  commits. `sim2sim fetch` says so and downloads them for local use. They
+  commits. `gaitkeeper fetch` says so and downloads them for local use. They
   are not redistributed from this repository. unitree_mujoco and MuJoCo
   Menagerie are BSD-3-Clause.
 * The golden traces (about 126 MB each) are not published. Tests that need
@@ -188,8 +188,8 @@ that simulation, and another session if the Isaac Lab API has moved.
    substep), the articulation's armature, friction, damping, limits, masses,
    centers of mass, inertias and contact material, the startup randomization,
    and the live contract. Record the golden schedule (36 s) and the issue
-   145 tour (`src/sim2sim/data/issue145_tour.yaml`, 3 seeds, with and without
-   punches). Then `sim2sim verify` on CPU. Agreement there is the only path
+   145 tour (`src/gaitkeeper/data/issue145_tour.yaml`, 3 seeds, with and without
+   punches). Then `gaitkeeper verify` on CPU. Agreement there is the only path
    to `POLICY_UNDER_TASK` for issue 145.
 3. E4 on PhysX, about 0.5 h. Same schedule and seed: stock at 5 ms
    (decimation 4), ankle armature set 0.01 above stock at 5 ms, stock at
@@ -216,7 +216,7 @@ were fixed before looking at the output.
 unitree_rl_lab issue 145, and a list of exporter keys. None of them are in
 this repository, and none of them have been sent.
 
-**Open decisions.** The PyPI name `sim2sim` is generic and easy to miss.
+**Open decisions.** The PyPI name `gaitkeeper` is generic and easy to miss.
 Where the golden traces and the development logs should live, if they are
 published at all. Whether to ask Unitree before a demo that downloads the
 two unlicensed policy files, which the fetch command already labels.

@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sim2sim"
+name = "gaitkeeper"
 version = "0.0.1"
 description = "Check a locomotion policy's deployment contract against ground truth recorded in its training simulator."
 readme = "README.md"
@@ -21,13 +21,13 @@ sim = ["mujoco>=3.3"]
 record-mjlab = ["mjlab==1.2.0", "mujoco==3.5.0", "mujoco-warp==3.5.0", "warp-lang==1.12.*", "scipy"]
 
 [project.scripts]
-sim2sim = "sim2sim.cli:main"
+gaitkeeper = "gaitkeeper.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-sim2sim = ["data/*.json", "data/*.yaml"]
+gaitkeeper = ["data/*.json", "data/*.yaml"]
 
 [tool.ruff]
 line-length = 100

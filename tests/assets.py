@@ -1,16 +1,16 @@
 """Third-party files the integration tests use, from the fixture directory
-(``sim2sim fetch all``; ``$SIM2SIM_DATA`` or ``~/.cache/sim2sim``). Each test
+(``gaitkeeper fetch all``; ``$GAITKEEPER_DATA`` or ``~/.cache/gaitkeeper``). Each test
 skips when its files are absent, so the unit suite runs anywhere.
 
 Recorded golden traces are not downloadable: they come from the recorder and
-live under ``runs/`` (``$SIM2SIM_RUNS``)."""
+live under ``runs/`` (``$GAITKEEPER_RUNS``)."""
 
-import os
 from pathlib import Path
 
 import pytest
 
-from sim2sim.fixtures import data_dir
+from gaitkeeper.env import env
+from gaitkeeper.fixtures import data_dir
 
 DATA = data_dir()
 UMJ_G1 = DATA / "g1_unitree_mujoco" / "scene_29dof.xml"  # unitree_mujoco @ 1eb6642
@@ -23,8 +23,8 @@ MJLAB_ONNX = UMJLAB_G1 / "policy.onnx"  # the export the mjlab golden traces wer
 def need(*paths: Path) -> None:
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
-        pytest.skip(f"missing {missing}; `sim2sim fetch all` downloads the fixtures")
+        pytest.skip(f"missing {missing}; `gaitkeeper fetch all` downloads the fixtures")
 
 
-RUNS = Path(os.environ.get("SIM2SIM_RUNS", Path(__file__).parents[1] / "runs"))
+RUNS = Path(env("RUNS") or Path(__file__).parents[1] / "runs")
 GOLDEN_A, GOLDEN_B, GOLDEN_C = (RUNS / f"g1_golden_{x}" for x in "abc")

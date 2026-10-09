@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import synth
 
-from sim2sim.compare import Candidate, _classify, verify
-from sim2sim.inject import defects, history5, judge
+from gaitkeeper.compare import Candidate, _classify, verify
+from gaitkeeper.inject import defects, history5, judge
 
 
 def test_clean_log_passes_against_the_rounded_contract(clean_log, files, policy):
@@ -93,7 +93,7 @@ def test_simplest_fit_wins():
 
 def test_self_written_trace_is_labeled_and_capped(clean_log, files, policy):
     log = clean_log.slice_steps(0, clean_log.n_steps)
-    log.meta["written_by_sim2sim_runner"] = True
+    log.meta["written_by_gaitkeeper_runner"] = True
     rep = verify(log, files, policy)
     assert rep.label == "SELF_CONSISTENT" and rep.evidence == "L1"
 
@@ -104,7 +104,7 @@ def test_controller_assumptions_are_reported(clean_log, files, policy):
 
 
 def test_invalid_input(files):
-    from sim2sim.trace import Trace
+    from gaitkeeper.trace import Trace
 
     rep = verify(Trace({"obs": np.zeros((3, 2))}, {}, "harness"), files)
     assert rep.verdict == "INVALID_INPUT"

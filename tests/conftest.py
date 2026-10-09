@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import synth  # noqa: E402
 
-from sim2sim.inject import Harness  # noqa: E402
+from gaitkeeper.inject import Harness  # noqa: E402
 
 
 @pytest.fixture(scope="session")

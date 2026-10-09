@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
 from .contract import Contract
+from .env import env
 from .trace import Trace
 
 
@@ -418,12 +418,12 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     sets = fixtures.manifest()
     if args.list or not args.sets:
         root = fixtures.data_dir()
-        print(f"fixture sets (directory {root}; set SIM2SIM_DATA to change it):")
+        print(f"fixture sets (directory {root}; set GAITKEEPER_DATA to change it):")
         for name, s in sets.items():
             state = "present" if s.present() else "not fetched"
             print(f"  {name:18s} {state:12s} {s.repo}@{s.commit[:7]}: {s.about}")
         if not args.sets:
-            print("fetch with `sim2sim fetch <set> ...` or `sim2sim fetch all`")
+            print("fetch with `gaitkeeper fetch <set> ...` or `gaitkeeper fetch all`")
         return 0
     names = list(sets) if args.sets == ["all"] else args.sets
     for n in names:
@@ -445,7 +445,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
                 fixtures.require(n)
             fixtures.fetch(n, log=lambda m: print(m, file=sys.stderr))
     pol, scene = fixtures.get("g1_rl_lab"), fixtures.get("g1_unitree_mujoco")
-    tour = resources.files("sim2sim").joinpath("data/issue145_tour.yaml")
+    tour = resources.files("gaitkeeper").joinpath("data/issue145_tour.yaml")
     print(
         "Demo: unitree_rl_lab issue 145, where the official G1 policy is reported to score 0% on a\n"
         "waypoint tour in a third-party benchmark, and the question is whether the harness is wrong.\n"
@@ -496,7 +496,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
         "\nHow to read this: in this runner the policy stands still for small commands (the DEAD\n"
         "ZONE lines above) and does not turn in place, which is most of what the tour asks for,\n"
         "so the tour fails with a harness that follows the contract; the punches then knock it\n"
-        f"over. This is an L1 finding (this runner, these assumptions): `sim2sim task` exits {code}\n"
+        f"over. This is an L1 finding (this runner, these assumptions): `gaitkeeper task` exits {code}\n"
         "here. It does not show that the benchmark's harness is correct, and it attributes\n"
         "nothing; that needs a golden trace from the training simulator\n"
         "(README: Exit codes, Evidence levels)."
@@ -543,7 +543,7 @@ def _floor_warning(mjcf: str) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="sim2sim")
+    ap = argparse.ArgumentParser(prog="gaitkeeper")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def contract_args(p: argparse.ArgumentParser) -> None:
@@ -688,13 +688,13 @@ def main(argv: list[str] | None = None) -> int:
             ap.error("infer needs a trace")
     problem = _check_inputs(args)
     if problem:
-        print(f"sim2sim {args.cmd}: {problem}", file=sys.stderr)
+        print(f"gaitkeeper {args.cmd}: {problem}", file=sys.stderr)
         return 2
     if getattr(args, "mjcf", None):
         w = _floor_warning(args.mjcf)
         if w:
             print(w, file=sys.stderr)
-    if os.environ.get("SIM2SIM_DEBUG"):
+    if env("DEBUG"):
         return args.fn(args)
     try:
         return args.fn(args)
@@ -703,12 +703,12 @@ def main(argv: list[str] | None = None) -> int:
         return 130
     except ModuleNotFoundError as e:
         extra = {"mujoco": " (pip install -e .[sim])"}.get(str(e.name), "")
-        print(f"sim2sim {args.cmd}: needs the Python package {e.name!r}{extra}", file=sys.stderr)
+        print(f"gaitkeeper {args.cmd}: needs the Python package {e.name!r}{extra}", file=sys.stderr)
         return 2
     except (OSError, ValueError, KeyError, RuntimeError) as e:
         msg = e.args[0] if isinstance(e, KeyError) and e.args else e
         print(
-            f"sim2sim {args.cmd}: {msg}\n  (set SIM2SIM_DEBUG=1 for the full traceback)",
+            f"gaitkeeper {args.cmd}: {msg}\n  (set GAITKEEPER_DEBUG=1 for the full traceback)",
             file=sys.stderr,
         )
         return 2

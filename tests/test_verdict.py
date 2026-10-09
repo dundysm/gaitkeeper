@@ -4,8 +4,8 @@ import itertools
 
 import pytest
 
-from sim2sim.metrics import Case, score
-from sim2sim.verdict import EXIT, Evidence, decide
+from gaitkeeper.metrics import Case, score
+from gaitkeeper.verdict import EXIT, Evidence, decide
 
 G = {"reference": "golden", "mapping": "pass"}
 ROWS = [

@@ -3,9 +3,9 @@ import pytest
 import yaml
 from assets import UMJLAB_G1, URL_G1, need
 
-from sim2sim.presets import apply_preset
-from sim2sim.readers.unitree_deploy import read_unitree_deploy
-from sim2sim.tables import G1_29_ISAAC_IDS, G1_29_SDK, H1_SDK, SDK_TABLES
+from gaitkeeper.presets import apply_preset
+from gaitkeeper.readers.unitree_deploy import read_unitree_deploy
+from gaitkeeper.tables import G1_29_ISAAC_IDS, G1_29_SDK, H1_SDK, SDK_TABLES
 
 
 def _yaml(tmp_path, robot_names, jmap, **over):

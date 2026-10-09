@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from sim2sim import fixtures
-from sim2sim.cli import main
+from gaitkeeper import fixtures
+from gaitkeeper.cli import main
 
 
 def test_manifest_pins_every_file():
@@ -69,18 +69,18 @@ def test_fetch_refuses_a_file_whose_hash_differs(tmp_path, monkeypatch):
 
 
 def test_missing_set_says_how_to_get_it(tmp_path, monkeypatch):
-    monkeypatch.setenv("SIM2SIM_DATA", str(tmp_path))
-    with pytest.raises(fixtures.FixtureError, match="sim2sim fetch g1_rl_lab"):
+    monkeypatch.setenv("GAITKEEPER_DATA", str(tmp_path))
+    with pytest.raises(fixtures.FixtureError, match="gaitkeeper fetch g1_rl_lab"):
         fixtures.require("g1_rl_lab")
     with pytest.raises(fixtures.FixtureError, match="known"):
         fixtures.get("nope")
 
 
 def test_demo_without_files_and_no_fetch_is_a_clean_error(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("SIM2SIM_DATA", str(tmp_path))
+    monkeypatch.setenv("GAITKEEPER_DATA", str(tmp_path))
     assert main(["demo", "--no-fetch"]) == 2
     err = capsys.readouterr().err
-    assert "sim2sim fetch g1_rl_lab" in err and "Traceback" not in err
+    assert "gaitkeeper fetch g1_rl_lab" in err and "Traceback" not in err
 
 
 def test_demo_runs_the_issue_145_task(monkeypatch, capsys):
@@ -89,7 +89,7 @@ def test_demo_runs_the_issue_145_task(monkeypatch, capsys):
     from assets import UMJ_G1, URL_G1, need
 
     need(URL_G1 / "deploy.yaml", URL_G1 / "policy.onnx", UMJ_G1)
-    import sim2sim.cli as cli
+    import gaitkeeper.cli as cli
 
     seen = []
     monkeypatch.setattr(cli, "main", lambda argv: seen.append(argv) or 5)
@@ -119,7 +119,7 @@ def test_cli_errors_are_one_line(tmp_path, capsys):
 
 
 def test_model_without_a_floor_is_flagged(tmp_path):
-    from sim2sim.cli import _floor_warning
+    from gaitkeeper.cli import _floor_warning
 
     robot = tmp_path / "robot.xml"
     robot.write_text(

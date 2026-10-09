@@ -6,7 +6,7 @@ whole observation and action path from this file, so its numbers are taken as
 exact: the robot runs 0.07 when the file says 0.07, however the trained value
 was rounded. Differences against training-side values (ONNX metadata, a live
 contract) are boundary C deviations of the deployment, reported by
-``sim2sim.deviation``, not file conflicts.
+``gaitkeeper.deviation``, not file conflicts.
 
 What the runtime reads, at unitree_rl_lab@4960b84 and unitree_rl_mjlab@1425b15
 (same lines in both, ``deploy/include``):

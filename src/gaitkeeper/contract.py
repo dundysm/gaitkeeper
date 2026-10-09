@@ -16,7 +16,9 @@ from typing import Any
 
 import yaml
 
-SCHEMA = "sim2sim/contract/v3"
+SCHEMA = "gaitkeeper/contract/v3"
+# Written before the project was renamed from sim2sim; read as the same schema.
+LEGACY_SCHEMAS = ("sim2sim/contract/v3",)
 
 SOURCES = (
     "live",  # read from the running training env
@@ -169,6 +171,8 @@ class Contract:
     def from_dict(cls, d: dict[str, Any]) -> Contract:
         d = dict(d)
         prov = {k: Provenance.from_dict(v) for k, v in (d.pop("provenance", None) or {}).items()}
+        if d.get("schema") in LEGACY_SCHEMAS:
+            d["schema"] = SCHEMA
         if d.get("schema") != SCHEMA:
             raise ValueError(f"schema {d.get('schema')!r}, expected {SCHEMA!r}")
         unknown = set(d) - set(SECTIONS)

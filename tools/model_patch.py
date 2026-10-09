@@ -13,7 +13,7 @@ from pathlib import Path
 
 import mujoco
 
-from sim2sim.models import apply_randomization, model_patch
+from gaitkeeper.models import apply_randomization, model_patch
 
 
 def main(path: str) -> None:

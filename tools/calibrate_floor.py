@@ -4,7 +4,7 @@ Each trace is analysed against the model it was simulated on (the recorder's
 compiled model, rebuilt from the XML and patch when the MuJoCo versions
 differ), with the contract the recorder wrote next to it. The floor is the
 largest clean-step RMS per joint and the largest root residual RMS over the
-traces. Writes or updates ``src/sim2sim/data/floors.json``.
+traces. Writes or updates ``src/gaitkeeper/data/floors.json``.
 
     python tools/calibrate_floor.py runs/g1_golden_a runs/g1_golden_b runs/g1_golden_c
 """
@@ -13,9 +13,9 @@ import argparse
 import json
 from pathlib import Path
 
-from sim2sim.contract import Contract
-from sim2sim.residual import FLOORS_PATH, calibrate, engine_key
-from sim2sim.trace import Trace
+from gaitkeeper.contract import Contract
+from gaitkeeper.residual import FLOORS_PATH, calibrate, engine_key
+from gaitkeeper.trace import Trace
 
 
 def main() -> None:

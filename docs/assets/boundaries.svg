@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="290" viewBox="0 0 900 290" role="img" aria-labelledby="t d">
+  <title id="t">The four boundaries gaitkeeper checks</title>
+  <desc id="d">A golden trace from the training simulator is compared with the deployment at four boundaries: A signals to observation, B observation to action, C action to effort, D effort to next state. Example outputs cycle: CONTRACT when A disagrees, PHYSICS when only D disagrees and a counterfactual confirms it, POLICY_UNDER_TASK when all four agree and the source sim fails the task too, PASS when all agree and the closed loop works.</desc>
+  <style>
+    :root { --bg:#ffffff; --fg:#1f2328; --muted:#59636e; --box:#f6f8fa; --edge:#d1d9e0; --accent:#0969da; --ok:#1a7f37; --bad:#cf222e; --warn:#9a6700; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --box:#151b23; --edge:#3d444d; --accent:#4493f8; --ok:#3fb950; --bad:#f85149; --warn:#d29922; }
+    }
+    text { font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+    .bg { fill: var(--bg); }
+    .box { fill: var(--box); stroke: var(--edge); stroke-width: 1.5; }
+    .src { fill: var(--box); stroke: var(--edge); stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .letter { font-size: 24px; font-weight: 700; fill: var(--accent); }
+    .title { font-size: 13px; font-weight: 600; fill: var(--fg); }
+    .q { font-size: 12px; fill: var(--muted); }
+    .wire { stroke: var(--edge); stroke-width: 2; fill: none; }
+    .flow { stroke: var(--accent); stroke-width: 2; fill: none; stroke-dasharray: 6 10; animation: flow 1.2s linear infinite; }
+    .ring { fill: none; stroke-width: 3; opacity: 0; animation: show 16s infinite; }
+    .r-bad { stroke: var(--bad); } .r-warn { stroke: var(--warn); } .r-ok { stroke: var(--ok); } .r-acc { stroke: var(--accent); }
+    .label { font-size: 11px; fill: var(--muted); letter-spacing: 0.8px; }
+    .verdict { font-size: 15px; font-weight: 700; opacity: 0; animation: show 16s infinite; }
+    .v-bad { fill: var(--bad); } .v-warn { fill: var(--warn); } .v-acc { fill: var(--accent); } .v-ok { fill: var(--ok); }
+    .why { font-size: 13px; fill: var(--muted); opacity: 0; animation: show 16s infinite; }
+    @keyframes flow { to { stroke-dashoffset: -16; } }
+    @keyframes show { 0% { opacity: 0; } 3%, 22% { opacity: 1; } 25%, 100% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .flow, .ring, .verdict, .why { animation: none; }
+      .s1 { opacity: 1; }
+    }
+  </style>
+  <rect class="bg" width="900" height="290" rx="12"/>
+
+  <path class="wire" d="M 124 112 L 878 112"/>
+  <path class="flow" d="M 124 112 L 878 112"/>
+
+  <rect class="src" x="20" y="62" width="104" height="100" rx="10"/>
+  <text class="title" x="72" y="106" text-anchor="middle">golden trace</text>
+  <text class="q" x="72" y="126" text-anchor="middle">from the</text>
+  <text class="q" x="72" y="142" text-anchor="middle">training sim</text>
+
+  <g>
+    <rect class="box" x="142" y="52" width="174" height="120" rx="10"/>
+    <text class="letter" x="160" y="88">A</text>
+    <text class="title" x="160" y="114">signals → observation</text>
+    <text class="q" x="160" y="136">same observation from</text>
+    <text class="q" x="160" y="152">the same state?</text>
+
+    <rect class="box" x="328" y="52" width="174" height="120" rx="10"/>
+    <text class="letter" x="346" y="88">B</text>
+    <text class="title" x="346" y="114">observation → action</text>
+    <text class="q" x="346" y="136">same policy output</text>
+    <text class="q" x="346" y="152">on recorded inputs?</text>
+
+    <rect class="box" x="514" y="52" width="174" height="120" rx="10"/>
+    <text class="letter" x="532" y="88">C</text>
+    <text class="title" x="532" y="114">action → effort</text>
+    <text class="q" x="532" y="136">same scale, offset, gains,</text>
+    <text class="q" x="532" y="152">joint order and delay?</text>
+
+    <rect class="box" x="700" y="52" width="174" height="120" rx="10"/>
+    <text class="letter" x="718" y="88">D</text>
+    <text class="title" x="718" y="114">effort → next state</text>
+    <text class="q" x="718" y="136">do the dynamics</text>
+    <text class="q" x="718" y="152">explain the motion?</text>
+  </g>
+
+  <!-- scenario 1, 0 to 4 s: CONTRACT at A -->
+  <rect class="ring r-bad s1x" x="142" y="52" width="174" height="120" rx="10" style="animation-delay:0s"/>
+  <!-- scenario 2, 4 to 8 s: PHYSICS at D -->
+  <rect class="ring r-warn" x="700" y="52" width="174" height="120" rx="10" style="animation-delay:4s"/>
+  <!-- scenario 3, 8 to 12 s: all agree, the task fails in the source too -->
+  <rect class="ring r-acc s1" x="142" y="52" width="174" height="120" rx="10" style="animation-delay:8s"/>
+  <rect class="ring r-acc s1" x="328" y="52" width="174" height="120" rx="10" style="animation-delay:8s"/>
+  <rect class="ring r-acc s1" x="514" y="52" width="174" height="120" rx="10" style="animation-delay:8s"/>
+  <rect class="ring r-acc s1" x="700" y="52" width="174" height="120" rx="10" style="animation-delay:8s"/>
+  <!-- scenario 4, 12 to 16 s: PASS -->
+  <rect class="ring r-ok" x="142" y="52" width="174" height="120" rx="10" style="animation-delay:12s"/>
+  <rect class="ring r-ok" x="328" y="52" width="174" height="120" rx="10" style="animation-delay:12s"/>
+  <rect class="ring r-ok" x="514" y="52" width="174" height="120" rx="10" style="animation-delay:12s"/>
+  <rect class="ring r-ok" x="700" y="52" width="174" height="120" rx="10" style="animation-delay:12s"/>
+
+  <text class="label" x="20" y="208">EXAMPLE OUTPUTS</text>
+  <text class="verdict v-bad" x="20" y="238" style="animation-delay:0s">CONTRACT · boundary A</text>
+  <text class="why" x="20" y="262" style="animation-delay:0s">base_ang_vel is a time-varying rotation of the truth: the harness reads the gyro in the world frame</text>
+  <text class="verdict v-warn" x="20" y="238" style="animation-delay:4s">PHYSICS · boundary D</text>
+  <text class="why" x="20" y="262" style="animation-delay:4s">A to C match; the residual is above the engine's floor, and copying contact parameters from the source restores walking</text>
+  <text class="verdict v-acc s1" x="20" y="238" style="animation-delay:8s">POLICY_UNDER_TASK</text>
+  <text class="why s1" x="20" y="262" style="animation-delay:8s">A to D agree, and the source sim also stands still under the task's small commands</text>
+  <text class="verdict v-ok" x="20" y="238" style="animation-delay:12s">PASS · evidence L3</text>
+  <text class="why" x="20" y="262" style="animation-delay:12s">A to C match the source trace, the residual is at the floor, and the closed loop meets the bar</text>
+</svg>

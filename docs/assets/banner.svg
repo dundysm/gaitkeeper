@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="200" viewBox="0 0 900 200" role="img" aria-labelledby="t d">
+  <title id="t">gaitkeeper</title>
+  <desc id="d">Footsteps walk up to a gate. Tagline: why a walking policy that works in training fails in a second simulator.</desc>
+  <style>
+    :root { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --step: #0969da; --gate: #1a7f37; --line: #d1d9e0; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --step: #4493f8; --gate: #3fb950; --line: #3d444d; }
+    }
+    .bg { fill: var(--bg); }
+    .name { font: 700 52px ui-sans-serif, -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; fill: var(--fg); letter-spacing: -1px; }
+    .tag { font: 400 17px ui-sans-serif, -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; fill: var(--muted); }
+    .ground { stroke: var(--line); stroke-width: 2; stroke-dasharray: 4 6; }
+    .foot { fill: var(--step); opacity: 0; animation: step 6s infinite; }
+    .gate { stroke: var(--gate); stroke-width: 5; stroke-linecap: round; }
+    .gatecap { fill: var(--gate); }
+    .pulse { fill: none; stroke: var(--gate); stroke-width: 2; opacity: 0; transform-origin: 862px 150px; animation: pulse 6s infinite; }
+    @keyframes step {
+      0% { opacity: 0; transform: translateY(4px); }
+      4% { opacity: 1; transform: translateY(0); }
+      70% { opacity: 1; }
+      85%, 100% { opacity: 0; }
+    }
+    @keyframes pulse {
+      0%, 62% { opacity: 0; transform: scale(0.6); }
+      66% { opacity: 0.9; }
+      80%, 100% { opacity: 0; transform: scale(1.8); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .foot { animation: none; opacity: 1; }
+      .pulse { animation: none; }
+    }
+  </style>
+  <rect class="bg" width="900" height="200" rx="12"/>
+  <text class="name" x="40" y="88">gaitkeeper</text>
+  <text class="tag" x="42" y="122">Why does a walking policy that works in training fail in a second simulator?</text>
+
+  <line class="ground" x1="40" y1="166" x2="845" y2="166"/>
+  <!-- footprints: alternating left and right, stepping toward the gate -->
+  <g>
+    <ellipse class="foot" cx="70"  cy="145" rx="11" ry="5.5" style="animation-delay:0.0s"/>
+    <ellipse class="foot" cx="150" cy="157" rx="11" ry="5.5" style="animation-delay:0.3s"/>
+    <ellipse class="foot" cx="230" cy="145" rx="11" ry="5.5" style="animation-delay:0.6s"/>
+    <ellipse class="foot" cx="310" cy="157" rx="11" ry="5.5" style="animation-delay:0.9s"/>
+    <ellipse class="foot" cx="390" cy="145" rx="11" ry="5.5" style="animation-delay:1.2s"/>
+    <ellipse class="foot" cx="470" cy="157" rx="11" ry="5.5" style="animation-delay:1.5s"/>
+    <ellipse class="foot" cx="550" cy="145" rx="11" ry="5.5" style="animation-delay:1.8s"/>
+    <ellipse class="foot" cx="630" cy="157" rx="11" ry="5.5" style="animation-delay:2.1s"/>
+    <ellipse class="foot" cx="710" cy="145" rx="11" ry="5.5" style="animation-delay:2.4s"/>
+    <ellipse class="foot" cx="790" cy="157" rx="11" ry="5.5" style="animation-delay:2.7s"/>
+  </g>
+  <!-- the gate -->
+  <line class="gate" x1="862" y1="118" x2="862" y2="174"/>
+  <circle class="gatecap" cx="862" cy="114" r="6"/>
+  <circle class="pulse" cx="862" cy="150" r="18"/>
+</svg>

@@ -1,94 +1,90 @@
-# gaitkeeper
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="gaitkeeper: why does a walking policy that works in training fail in a second simulator?" width="900">
+</p>
 
-Checks a locomotion policy's deployment against the training environment it
-came from, one boundary at a time, using a golden trace recorded in that
-environment:
+<p align="center">
+  <a href="https://github.com/dundysm/gaitkeeper/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dundysm/gaitkeeper/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3776ab">
+  <img alt="MuJoCo on CPU" src="https://img.shields.io/badge/MuJoCo-CPU-1f6feb">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2ea043"></a>
+  <a href="STATUS.md"><img alt="Status: early" src="https://img.shields.io/badge/status-early-d29922"></a>
+</p>
 
-* B: observation to action (the policy file on recorded inputs)
-* A: simulator state to observation (each term rebuilt from raw state)
-* C: action to joint target and effort (scale, offset, gains, ordering)
+A humanoid locomotion policy that walks in the simulator it was trained in often
+fails in a second one, or scores nothing in someone else's harness. Three
+different things can be wrong, and they need different fixes:
 
-The contract (what the policy expects) is read from the exported files and
-written to `contract.yaml`, with the source of every field: `live`, `file`,
-`file+table`, `default`, `preset`, `inferred`, `user`, `unknown` or
-`conflicting`.
+* **the contract**: the harness does not build the observation or apply the
+  action the way training did (layout, scale, gains, joint order),
+* **the physics**: the two simulators disagree on the robot (mass, friction,
+  armature, how the drive is integrated),
+* **the policy under the task**: it was never able to do what it is being asked.
 
-Without a golden trace, a closed-loop runner drives the policy in a target
-MJCF on the CPU, `check` runs static and linearized checks of the contract
-against that MJCF, and `envelope` maps how the robot responds to commands.
+gaitkeeper tells them apart, and says how much evidence backs the answer.
 
-`infer` recovers the observation layout (history length, layout, order,
-init, term boundaries and labels) from a trace, and abstains while any column
-is ambiguous.
+<p align="center">
+  <img src="docs/assets/dead-zone.gif" alt="Two G1 robots in MuJoCo. Left: commanded 0.15 m/s forward, it stands still. Right: commanded 0.50 m/s, it walks at 0.48 m/s." width="808">
+  <br>
+  <sub>The official unitree_rl_lab G1 policy in unitree_mujoco, rendered from gaitkeeper's runner
+  (<code>tools/render_readme_media.py</code>). Below about 0.2 m/s it stands still. A waypoint tour is
+  mostly small commands, which is one reason it can score 0% with a harness that follows the contract.</sub>
+</p>
 
-With a target MJCF and a golden trace that records physics-rate channels,
-`verify` also measures boundary D (the inverse dynamics residual of the trace
-under the target, against a floor calibrated for the source engine) and runs
-the model counterfactual: the source's recorded model and the target in the
-same closed loop, then the target with one parameter group at a time taken
-from the source. `PHYSICS` needs all of that; a residual alone is never a
-cause.
+## How it decides
 
-Status: early. The mjlab recorder, the B, A, C comparator, the Unitree
-deploy.yaml reader, the runner, the checks, the envelope with its behavior
-probes, `infer`, boundary D (floor calibrated for mjlab 1.2.0 on
-mujoco_warp 3.5.0 only), the counterfactual and the verdict engine exist.
-Nothing has been recorded in Isaac Lab yet, so no Isaac or PhysX source is
-calibrated. See `STATUS.md`.
+<p align="center">
+  <img src="docs/assets/boundaries.svg" alt="Boundaries A to D, from a golden trace recorded in the training simulator: A signals to observation, B observation to action, C action to effort, D effort to next state." width="900">
+</p>
+
+It reads the policy's contract from the exported files, with the source of
+every field (`live`, `file`, `file+table`, `default`, `preset`, `inferred`,
+`user`, `unknown` or `conflicting`). Against a golden trace recorded in the
+training simulator it checks one boundary at a time and stops at the first that
+disagrees:
+
+| | Boundary | Question | A mismatch means |
+|---|---|---|---|
+| **B** | observation → action | Does the policy file give the recorded actions on the recorded inputs? | `CONTRACT` (wrong file, normalizer, state) |
+| **A** | signals → observation | Is each observation term rebuilt from raw state the way training built it? | `CONTRACT`, with the term and the pattern (scale, permutation, frame, layout, time shift) |
+| **C** | action → effort | Same scale, offset, clip, delay, gains by name? | `CONTRACT`; effort limits are reported, never a mismatch |
+| **D** | effort → next state | Does the target model's inverse dynamics explain the recorded motion? | evidence for `PHYSICS`, never a cause by itself |
+
+`PHYSICS` needs a golden trace this tool did not write, A to C passing, the
+nominal closed loop failing, a residual above a floor calibrated for that
+source engine, **and** a counterfactual: copying one parameter group from the
+source model into the target changes the outcome. Without a golden trace,
+gaitkeeper still runs the policy in a target MJCF and reports what the robot
+does, labeled as a behavioral finding under stated assumptions, not a cause.
 
 ## Quick start
 
-    python -m venv .venv && . .venv/bin/activate
-    pip install -e .[sim]
-    gaitkeeper demo
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[sim]"
+gaitkeeper demo
+```
 
-`demo` runs the issue 145 setup end to end on the CPU: unitree_rl_lab's G1
-velocity policy, as shipped, on unitree_mujoco's G1 scene, driven through a
-tour of small commands and in-place turns with the arms held, then 600 N
-punches. On first use it downloads the policy and the scene (about 20 MB,
-pinned commits, sha256 checked) into `~/.cache/gaitkeeper`. The run takes about
-15 s on 8 cores. It prints the contract it read, the command response map
-with its dead zones, the task segment by segment, and the finding:
+`demo` runs the [unitree_rl_lab issue 145](https://github.com/unitreerobotics/unitree_rl_lab/issues/145)
+setup end to end on the CPU: unitree_rl_lab's G1 velocity policy, as shipped, on
+unitree_mujoco's G1 scene, driven through a tour of small commands and in-place
+turns with the arms held, then 600 N punches. On first use it downloads the
+policy and the scene (about 20 MB, pinned commits, sha256 checked) into
+`~/.cache/gaitkeeper`. It takes under a minute and prints the contract it read,
+the command response map with its dead zones, the task segment by segment, and
+the finding:
 
-    DEAD ZONE  vx ignored for |cmd| <= 0.20 on the + side (first tracked +0.22); ...
-    Task 'issue 145 tour' (3 seeds) on .../scene_29dof.xml: misses the bar on 3/3 seeds
-        2.0 to   6.0 s (+0.15, +0.00, +0.00)  achieved (+0.00, -0.00, +0.00)  misses the bar on 3/3 seeds: dead zone
-        ...
-    Finding  TASK_FAILURE_OBSERVED / BEHAVIORAL_LIMITATION  (evidence L1, exit 5)
-      caveat: a silent contract error is not excluded
-      caveat: no attribution: neither PHYSICS nor CONTRACT can be concluded without a reference
+```text
+DEAD ZONE  vx ignored for |cmd| <= 0.20 on the + side (first tracked +0.22); ...
+Task 'issue 145 tour' (3 seeds) on .../scene_29dof.xml: misses the bar on 3/3 seeds
+    2.0 to   6.0 s (+0.15, +0.00, +0.00)  achieved (+0.00, -0.00, +0.00)  misses the bar on 3/3 seeds: dead zone
+    ...
+Finding  TASK_FAILURE_OBSERVED / BEHAVIORAL_LIMITATION  (evidence L1, exit 5)
+  caveat: a silent contract error is not excluded
+  caveat: no attribution: neither PHYSICS nor CONTRACT can be concluded without a reference
+```
 
 That is a finding about the policy in this runner, not a verdict on anyone's
-harness: see Evidence levels below.
-
-## Install
-
-    pip install -e .[sim]                # runner, check, envelope, task, demo (MuJoCo)
-    pip install -e .[dev]                # tests and lint
-    pip install -e .[record-mjlab]       # recorder (mjlab 1.2.0, MuJoCo 3.5.0, CPU is enough)
-
-Python 3.10 or newer. Reading contracts and comparing traces needs only the
-base install (numpy, pyyaml, onnxruntime).
-
-## Third-party files
-
-Nothing third party is vendored. `gaitkeeper fetch` downloads pinned files from
-their upstream repositories at fixed commits and checks each sha256
-(`src/gaitkeeper/data/fixtures.json`):
-
-| Set | Source | What |
-|---|---|---|
-| `g1_rl_lab` | unitree_rl_lab @ 4960b84 | G1 29 dof velocity policy: deploy.yaml, policy.onnx |
-| `g1_rl_mjlab` | unitree_rl_mjlab @ 1425b15 | G1 velocity policy: deploy.yaml, policy.onnx |
-| `g1_unitree_mujoco` | unitree_mujoco @ 1eb6642 | G1 29 dof scene and meshes (BSD-3-Clause) |
-| `g1_menagerie` | mujoco_menagerie @ 0059d43 | Unitree G1 scene and meshes (BSD-3-Clause) |
-
-    gaitkeeper fetch                 # list the sets and whether they are present
-    gaitkeeper fetch all             # download every set
-
-The two policy repositories had no license file at those commits; the files
-are fetched for local use, not redistributed. The directory is
-`$GAITKEEPER_DATA` when set, else `~/.cache/gaitkeeper`.
+harness. See [Evidence levels](#evidence-levels).
 
 ## Evidence levels
 
@@ -102,16 +98,30 @@ are fetched for local use, not redistributed. The directory is
 "Verified" appears only at L2 or above. A trace written by gaitkeeper's own
 runner never raises the level.
 
-## Exit codes
+**Exit codes** (`verify`, `task`): `0` PASS (or L1 findings with nothing
+failing) · `1` CONTRACT · `2` INVALID_INPUT · `3` PHYSICS · `4`
+POLICY_UNDER_TASK · `5` UNDETERMINED or an L1 finding such as
+TASK_FAILURE_OBSERVED · `6` UNSUPPORTED. Every command exits 2 with a one line
+message when an input is missing or unreadable (`GAITKEEPER_DEBUG=1` shows the
+traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
 
-`verify` and `task`: 0 PASS (or L1 findings with nothing failing), 1
-CONTRACT, 2 INVALID_INPUT, 3 PHYSICS, 4 POLICY_UNDER_TASK, 5 UNDETERMINED (or
-L1 findings such as TASK_FAILURE_OBSERVED), 6 UNSUPPORTED. Every command exits
-2 with a one line message when an input is missing or unreadable
-(`GAITKEEPER_DEBUG=1` shows the traceback), and warns when the MJCF has no floor.
-`demo` exits 0 when it ran.
+## Commands
 
-## Use
+| Command | What it does | Level it can reach |
+|---|---|---|
+| `demo` | The issue 145 setup, end to end | L1 |
+| `fetch` | Pinned policies and MJCF scenes, sha256 checked | |
+| `inspect` | Contract from an mjlab ONNX export or a Unitree `deploy.yaml` (G1 29 dof, H1) | a reading |
+| `verify <trace>` | Boundaries B, A, C | L2 on a golden trace, L1 on a harness log or a self trace |
+| `verify <trace> --mjcf` | Plus D, the nominal closed loop and the model counterfactual | L2 for PHYSICS and POLICY_UNDER_TASK, L3 for PASS |
+| `residual` | D alone, plus parameter fits that stay out of the verdict | detection only |
+| `task` | A command schedule, held joints and punches, with no reference | L1 |
+| `run`, `check`, `envelope` | Closed loop, static and linearized checks, the command response map | L1 |
+| `infer` | Observation layout from a trace, abstaining when ambiguous | |
+| `deviation` | Deploy values against training values, per joint | |
+
+<details>
+<summary><b>Usage examples, runner backends and controller assumptions</b></summary>
 
     # golden trace in the training env (runs in the mjlab environment)
     python tools/record_mjlab.py --task-path <unitree_rl_mjlab> --onnx <policy.onnx> --out runs/g1_golden
@@ -169,7 +179,50 @@ named training facts (for example
 controller field from a preset still prints `CONTROLLER_ASSUMED`: the preset
 reads the training config at a commit, not the run that produced the policy.
 
-## What the tests show
+</details>
+
+## Install
+
+```bash
+pip install -e ".[sim]"            # runner, check, envelope, task, demo (MuJoCo)
+pip install -e ".[dev]"            # tests and lint
+pip install -e ".[record-mjlab]"   # recorder (mjlab 1.2.0, MuJoCo 3.5.0, CPU is enough)
+```
+
+Python 3.10 or newer. Reading contracts and comparing traces needs only the
+base install (numpy, pyyaml, onnxruntime).
+
+### Third-party files
+
+Nothing third party is vendored. `gaitkeeper fetch` downloads pinned files from
+their upstream repositories at fixed commits and checks each sha256
+(`src/gaitkeeper/data/fixtures.json`):
+
+| Set | Source | What |
+|---|---|---|
+| `g1_rl_lab` | unitree_rl_lab @ 4960b84 | G1 29 dof velocity policy: deploy.yaml, policy.onnx |
+| `g1_rl_mjlab` | unitree_rl_mjlab @ 1425b15 | G1 velocity policy: deploy.yaml, policy.onnx |
+| `g1_unitree_mujoco` | unitree_mujoco @ 1eb6642 | G1 29 dof scene and meshes (BSD-3-Clause) |
+| `g1_menagerie` | mujoco_menagerie @ 0059d43 | Unitree G1 scene and meshes (BSD-3-Clause) |
+
+```bash
+gaitkeeper fetch          # list the sets and whether they are present
+gaitkeeper fetch all      # download every set
+```
+
+The two policy repositories had no license file at those commits; the files
+are fetched for local use, not redistributed. The directory is
+`$GAITKEEPER_DATA` when set, else `~/.cache/gaitkeeper`.
+
+## What has been measured
+
+The source engine for every attribution so far is mjlab 1.2.0 on mujoco_warp
+3.5.0. Nothing has been recorded in Isaac Lab or PhysX yet, so no Isaac source
+is calibrated and nothing about issue 145 goes past L1. See
+[STATUS.md](STATUS.md) for what works, what was measured and what is left.
+
+<details>
+<summary><b>What the tests and the measurements show</b></summary>
 
 `pytest` runs the unit suite on synthetic traces with a stand-in linear
 policy anywhere. Integration tests run on the fixtures (`gaitkeeper fetch all`)
@@ -326,6 +379,14 @@ committed):
 They do not show that any of this holds for other frameworks, other robots,
 real harness logs, or the robot itself. Runner results are labeled with the
 controller assumptions they rest on and are evidence L1 at most.
+
+</details>
+
+## Formerly sim2sim
+
+The project was called sim2sim. Contracts and traces written under the old
+schema ids, `SIM2SIM_*` environment variables and a cache in
+`~/.cache/sim2sim` are still read.
 
 ## License
 

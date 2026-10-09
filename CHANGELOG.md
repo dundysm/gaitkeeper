@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-First release on PyPI. The project was called sim2sim before this release.
+First release on PyPI.
 
 * Contract readers for mjlab ONNX exports and Unitree `deploy.yaml` (G1 29 dof, H1), with
   provenance for every field.

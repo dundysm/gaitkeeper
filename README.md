@@ -395,12 +395,6 @@ protocol, and `tools/blind.py` scores only against the committed hashes. Start w
 [blind test issue](https://github.com/dundysm/gaitkeeper/issues/new?template=blind-test.md).
 Results are published whatever they are.
 
-## Formerly sim2sim
-
-The project was called sim2sim. Contracts and traces written under the old
-schema ids, `SIM2SIM_*` environment variables and a cache in
-`~/.cache/sim2sim` are still read.
-
 ## License
 
 Apache-2.0

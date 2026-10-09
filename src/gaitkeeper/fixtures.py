@@ -61,10 +61,8 @@ def data_dir() -> Path:
     v = env("DATA")
     if v:
         return Path(v).expanduser()
-    cache = Path(os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache"))
-    new, old = cache / "gaitkeeper", cache / "sim2sim"
-    # Files fetched before the rename stay usable without a second download.
-    return old if old.is_dir() and not new.exists() else new
+    cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(cache) / "gaitkeeper"
 
 
 def manifest() -> dict[str, FixtureSet]:

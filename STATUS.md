@@ -217,14 +217,15 @@ were fixed before looking at the output. The protocol and the tooling exist
 (docs/BLIND_TEST.md, `tools/blind.py`, a blind test issue template); no
 submissions yet.
 
-**Drafts, not posted.** Notes on the `efferent` log format, a reply to
-unitree_rl_lab issue 145, and a list of exporter keys. None of them are in
-this repository, and none of them have been sent.
+**Posted.** A reply on unitree_rl_lab issue 145 (the mapping is right; the
+policy's dead zone and punches explain the score, measured in MuJoCo) and
+unitree_rl_lab issue 149 (asking for a LICENSE file). Notes on the `efferent`
+log format and a list of exporter keys are drafts, not sent.
 
 **Release.** 0.1.0 is on PyPI (`pip install "gaitkeeper[sim]"`).
 `.github/workflows/release.yml` publishes each `v*` tag through trusted
 publishing; a release created on GitHub makes the tag.
 
 **Open decisions.** The license for the published golden traces, which
-contain the outputs of a policy whose repository has no license file. An
-issue asking Unitree to add one is drafted, not posted.
+contain the outputs of a policy whose repository has no license file;
+waiting on Unitree's answer to issue 149.

@@ -54,10 +54,24 @@ are stored with the arrays:
 import numpy as np
 from gaitkeeper.trace import Trace
 
-arrays = {"obs": obs, "action": action, "command": command, "qpos": qpos, "qvel": qvel,
-          "reset": reset, "target": target}          # each [T, ...], one row per policy step
-meta = {"state_layout": {"joint_names": hinge_names, "free_joint": True, "quat_order": "wxyz",
-                         "ang_vel_frame": "body", "lin_vel_frame": "world"}}
+arrays = {
+    "obs": obs,
+    "action": action,
+    "command": command,
+    "qpos": qpos,
+    "qvel": qvel,
+    "reset": reset,
+    "target": target,
+}  # each [T, ...], one row per policy step
+meta = {
+    "state_layout": {
+        "joint_names": hinge_names,
+        "free_joint": True,
+        "quat_order": "wxyz",
+        "ang_vel_frame": "body",
+        "lin_vel_frame": "world",
+    }
+}
 Trace(arrays, meta, kind="harness").save("logs/run_07.npz")
 ```
 

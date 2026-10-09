@@ -188,8 +188,9 @@ recorder (listed in the changelog). What it measured:
 * **Issue 145.** The tour in Isaac Lab, three seeds: no forward motion for 0.15 and 0.1 m/s,
   no turn for 0.2 rad/s in place, 1.0 m for the 0.3 m/s leg, and a fall at every 600 N
   punch. Same as MuJoCo. The score is the policy's under that task, not the harness's.
-  The tour traces were recorded with held arms written into `action`, so `verify` on them
-  fails B; fixed in the recorder (the raw policy output is `action` now), not re-recorded.
+  Re-recorded with the fixed recorder (the raw policy output is `action`): B passes, and
+  A and C flag the 14 held arm joints, which is right, since the hold is not in the
+  contract. The setup script also ran clean end to end on a fresh pod.
 * **E4 on PhysX.** Ankle armature change recovered as -0.0096 to -0.0097 for -0.01 (passes
   the 20% bar); the shared-term fit is not explained (damping residual 1.2e-2), so the
   result is detection only. 16 of 29 joints fit; 13 left out.

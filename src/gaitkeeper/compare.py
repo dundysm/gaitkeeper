@@ -733,9 +733,11 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
         cl = np.asarray(clip, dtype=np.float64)[col]
         lo, hi = cl[:, 0], cl[:, 1]
 
-    def expected(r: np.ndarray) -> np.ndarray:
-        e = r * sc[None] + of[None]
+    def clipped(e: np.ndarray) -> np.ndarray:
         return e if lo is None else np.clip(e, lo[None], hi[None])
+
+    def expected(r: np.ndarray) -> np.ndarray:
+        return clipped(r * sc[None] + of[None])
 
     def tol_t(r: np.ndarray, e: np.ndarray) -> np.ndarray:
         return EXACT_REL * np.maximum(1.0, np.abs(e)) + np.abs(r) * rs + ro
@@ -778,9 +780,13 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
                             tol=lambda e, rl=rl: tol_t(rl, e),
                         )
                     )
-            cands.append(Candidate("default offset not added", 1, lambda: raw_rows * sc[None]))
             cands.append(
-                Candidate("target = raw action (no scale, no offset)", 1, lambda: raw_rows.copy())
+                Candidate("default offset not added", 1, lambda: clipped(raw_rows * sc[None]))
+            )
+            cands.append(
+                Candidate(
+                    "target = raw action (no scale, no offset)", 1, lambda: clipped(raw_rows.copy())
+                )
             )
             # Scale or offset from the other source, when the contract recorded one.
             alt = contract.prov("control.actions.joint_pos.scale").alternatives or {}
@@ -788,7 +794,9 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
                 v = np.array(vals, dtype=np.float64)[col]
                 cands.append(
                     Candidate(
-                        f"action scale from {src}", 1, lambda v=v: raw_rows * v[None] + of[None]
+                        f"action scale from {src}",
+                        1,
+                        lambda v=v: clipped(raw_rows * v[None] + of[None]),
                     )
                 )
             # Raw action clipped before scaling (wrapper clip).
@@ -818,7 +826,17 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
                         tol=lambda e, p=p: tol_t(raw_rows[:, p], e),
                     )
                 )
-            sc_fit = _fit_scale(tgt - of[None], raw_rows * sc[None], fit_rows, per_column=True)
+            if lo is None:
+                sc_fit = _fit_scale(tgt - of[None], raw_rows * sc[None], fit_rows, per_column=True)
+            else:
+                # Fit only on entries the clip did not touch.
+                use = np.zeros(tgt.shape, dtype=bool)
+                use[fit_rows] = True
+                eps = 1e-5 * np.maximum(1.0, np.abs(np.stack([lo, hi])).max(0))
+                use &= (tgt > (lo + eps)[None]) & (tgt < (hi - eps)[None])  # float32 targets
+                x, y = raw_rows * sc[None], tgt - of[None]
+                den = (x * x * use).sum(0)
+                sc_fit = None if np.any(den < 1e-12) else (x * y * use).sum(0) / den
             if sc_fit is not None:
                 badj = [tnames[j] for j in np.where(np.abs(sc_fit - 1) > 1e-3)[0]]
                 # One factor on every joint, up to the contract's own scale rounding.
@@ -831,7 +849,7 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
                         if uniform and len(badj) == len(tnames)
                         else f"action scale differs on {badj}",
                         2 if uniform else len(badj) + 1,
-                        lambda f=sc_fit: raw_rows * (sc * f)[None] + of[None],
+                        lambda f=sc_fit: clipped(raw_rows * (sc * f)[None] + of[None]),
                         structural=False,
                         fitted={"ratio": dict(zip(tnames, sc_fit.tolist()))},
                     )

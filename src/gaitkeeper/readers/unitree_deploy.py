@@ -165,7 +165,13 @@ def read_unitree_deploy(
     clip = act.get("clip")
     c.set(
         "control.actions.joint_pos.clip",
-        [[_f(a), _f(b)] for a, b in clip] if clip else None,
+        (
+            [_f(clip[0]), _f(clip[1])]
+            if clip and len(clip) == 2 and not isinstance(clip[0], (list, tuple))
+            else [[_f(a), _f(b)] for a, b in clip]
+            if clip
+            else None
+        ),
         "file",
         "deploy.yaml actions.JointPositionAction.clip, applied to processed targets (joint_actions.h:57)",
     )

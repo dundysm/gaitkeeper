@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 Fixes from an external audit of 0.5.0.
 
@@ -14,7 +14,9 @@ Fixes from an external audit of 0.5.0.
 * Isaac Lab reader: a group `history_length` overrides each term's, as the
   ObservationManager does (the term's won).
 * mjlab export reader: a per-joint action clip in deploy.yaml is read (it raised), and a
-  single `[low, high]` clip no longer crashes the runner.
+  single `[low, high]` clip no longer crashes the runner; the Unitree deploy.yaml reader
+  takes a single `[low, high]` clip too. Under a clip, C still names a wrong scale or a
+  missing offset (fitted on the entries the clip did not touch).
 * Adapter builds compile to a temporary file and move into place, so parallel runs never
   load a partly written library.
 * Input files are checked before any work: an ONNX file that does not load, an MJCF MuJoCo

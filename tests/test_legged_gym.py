@@ -95,3 +95,12 @@ def test_constant_arithmetic_is_read_and_other_expressions_are_refused(tmp_path)
     assert c.get("control.actions.joint_pos")["scale"]["left_knee_joint"] == 0.25
     with pytest.raises(ValueError, match="control.action_scale = SCALE"):
         _variant(tmp_path, "action_scale = 0.25", "action_scale = SCALE")
+
+
+def test_unused_bad_arithmetic_does_not_stop_the_reader(tmp_path):
+    c, _ = _variant(
+        tmp_path,
+        "action_scale = 0.25",
+        "action_scale = 0.25\n        junk = 1 / 0\n        big = 10 ** 10 ** 7",
+    )
+    assert c.get("control.actions.joint_pos")["scale"]["left_knee_joint"] == 0.25

@@ -152,3 +152,29 @@ def test_action_clip_shapes():
         action_clip_pairs(c, 3)
     c.set("control.actions.joint_pos.clip_stage", "none", "file", "t")
     assert action_clip_pairs(c, 3) is None
+
+
+def test_a_wrong_scale_under_a_binding_clip_is_still_named(harness, files, policy):
+    names = list(files.get("policy_io.joints.names"))
+    tr = harness.standard()
+    raw = tr["action"].astype(np.float64)
+    sc = np.array([files.get("control.actions.joint_pos.scale")[n] for n in names])
+    of = np.array([files.get("control.actions.joint_pos.offset")[n] for n in names])
+    e = raw * sc * 2.0 + of
+    half = 0.8 * np.abs(e - of).max(0)
+    lo, hi = of - half, of + half
+    tn = list(tr.meta.get("target_joint_names", names))
+    col = [names.index(n) for n in tn]
+    t = np.clip(e, lo, hi)[:, col]
+    tr.arrays["target"] = t.astype(np.float32)
+    tr.arrays["effort"] = harness.effort(t).astype(np.float32)
+    c = files.copy()
+    c.set(
+        "control.actions.joint_pos.clip",
+        [[float(a), float(b)] for a, b in zip(lo, hi)],
+        "user",
+        "t",
+    )
+    c.set("control.actions.joint_pos.clip_stage", "processed", "user", "t")
+    tc = verify(tr, c, policy).boundaries["C"].terms[0]
+    assert tc.status == "fail" and "scale" in (tc.pattern or ""), tc.pattern

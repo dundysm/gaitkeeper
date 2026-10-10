@@ -63,8 +63,13 @@ def _value(node: ast.expr) -> Any:
         pass
     if isinstance(node, ast.BinOp) and type(node.op) in _BINOPS:
         a, b = _value(node.left), _value(node.right)
-        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-            return _BINOPS[type(node.op)](a, b)
+        num = (int, float)
+        small = isinstance(b, num) and abs(b) <= 64  # no runaway powers from a config file
+        if isinstance(a, num) and isinstance(b, num) and (type(node.op) is not ast.Pow or small):
+            try:
+                return _BINOPS[type(node.op)](a, b)
+            except (ArithmeticError, ValueError):
+                pass  # 1/0 and the like stay unknown; refused only if the reader uses them
     elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
         v = _value(node.operand)
         if isinstance(v, (int, float)):

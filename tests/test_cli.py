@@ -116,3 +116,13 @@ def test_missing_config_is_a_usage_error(tmp_path, capsys):
     with pytest.raises(SystemExit) as e:
         main(["inspect"])
     assert e.value.code == 2 and "--config" in capsys.readouterr().err
+
+
+def test_policy_of_any_extension_and_scene_directory_are_checked(tmp_path, capsys):
+    from gaitkeeper.cli import main
+
+    bad = tmp_path / "policy.bin"
+    bad.write_text("a: 1\n")
+    assert main(["inspect", "--onnx", str(bad)]) == 2
+    assert "--onnx" in capsys.readouterr().err
+    assert main(["doctor", "--onnx", str(bad), "--mjcf", str(tmp_path)]) == 2

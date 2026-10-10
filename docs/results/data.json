@@ -1,6 +1,6 @@
 {
  "generated": "2026-10-10",
- "gaitkeeper": "0.5.0",
+ "gaitkeeper": "0.5.1",
  "benchmark": "rhoyn/teleop-walking-benchmark@6d331a8",
  "tour_s": 90,
  "seeds": 3,

@@ -1,6 +1,6 @@
 # Status
 
-October 10, 2026. gaitkeeper 0.5.0 on PyPI (`pip install "gaitkeeper[sim]"`).
+October 10, 2026. gaitkeeper 0.5.1 on PyPI (`pip install "gaitkeeper[sim]"`).
 
 What works, what has been measured, what does not work yet, and what is left. The
 commands, the evidence levels and the method are in the [README](README.md); the

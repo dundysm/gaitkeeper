@@ -95,7 +95,7 @@ svg text { fill: var(--muted); font: 10px var(--f-mono); }
 <body>
 <div class="wrap">
 <header>
-  <span class="eyebrow">gaitkeeper 0.5.0 · teleop-walking-benchmark</span>
+  <span class="eyebrow">gaitkeeper 0.5.1 · teleop-walking-benchmark</span>
   <h1>G1 Port Audit</h1>
   <p class="lede">Why each Unitree G1 walking policy in rhoyn's teleop-walking-benchmark scores what it does. Each port was read from its own adapter code, then the benchmark's 90 s waypoint tour was run one change at a time: the policy as its authors configured it, the port's values, the harness taking the arms, the random arm walk, the punches.</p>
   <div class="meta"><span>rhoyn/teleop-walking-benchmark@6d331a8</span><span>3 seeds per stage</span><span>MuJoCo, the benchmark's g1_29dof.xml</span><span>evidence L1</span><span>2026-10-10</span></div>
@@ -457,7 +457,7 @@ port: harness drives 8 joint(s) (hold), policy sees them as real: left_shoulder_
 
 <section>
   <h2>Reproduce</h2>
-<pre>pip install "gaitkeeper[sim]==0.5.0"
+<pre>pip install "gaitkeeper[sim]==0.5.1"
 git clone https://github.com/rhoyn/teleop-walking-benchmark twb   # at 6d331a8
 
 git clone https://github.com/unitreerobotics/unitree_rl_gym   # rl_gym's authors' config

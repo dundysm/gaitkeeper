@@ -146,8 +146,10 @@ def _merge_list(
 
 def _clip_list(clip: Any) -> list:
     """One [low, high] for every joint, or one per joint, as deploy.yaml writes it."""
-    if all(isinstance(v, (int, float)) for v in clip):
+    if len(clip) == 2 and all(isinstance(v, (int, float)) for v in clip):
         return [float(v) for v in clip]
+    if any(not isinstance(p, (list, tuple)) or len(p) != 2 or None in p for p in clip):
+        raise ValueError(f"deploy.yaml clip: expected [low, high] or one per joint, got {clip!r}")
     return [[float(a), float(b)] for a, b in clip]
 
 

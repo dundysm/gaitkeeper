@@ -914,12 +914,15 @@ def _not_onnx(path: str) -> str | None:
 
 
 def _not_mjcf(path: str) -> str | None:
-    if not str(path).endswith(".xml"):
-        return None
+    if Path(path).is_dir():
+        return "a directory; give the scene's XML file (for example scene_29dof.xml)"
     try:
         import mujoco
 
-        mujoco.MjModel.from_xml_path(str(path))
+        if str(path).endswith(".mjb"):
+            mujoco.MjModel.from_binary_path(str(path))
+        else:
+            mujoco.MjModel.from_xml_path(str(path))
     except ModuleNotFoundError:
         return None  # reported by the command, with the install hint
     except Exception as e:  # noqa: BLE001
@@ -964,7 +967,7 @@ def _check_inputs(args: argparse.Namespace) -> str | None:
             return f"--{flag.replace('_', '-')} {v}: no such file"
     for flag in ("onnx", "policy"):
         v = getattr(args, flag, None)
-        if v and str(v).endswith(".onnx"):
+        if v:
             problem = _not_onnx(v)
             if problem:
                 return f"--{flag} {v}: {problem}"

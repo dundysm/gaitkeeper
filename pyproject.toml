@@ -41,7 +41,7 @@ dev = ["pytest>=7", "ruff==0.16.8", "onnx>=1.15"]
 sim = ["mujoco>=3.3,<4"]
 # The recorder runs inside the training stack. For mjlab it needs the pinned
 # versions below; they are listed for reference and installed separately.
-record-mjlab = ["mjlab==1.2.0", "mujoco==3.5.0", "mujoco-warp==3.5.0", "warp-lang==1.12.*", "scipy"]
+record-mjlab = ["mjlab==1.2.0", "mujoco==3.5.0", "mujoco-warp==3.5.0", "warp-lang>=1.12,<1.19", "scipy"]
 
 [project.scripts]
 gaitkeeper = "gaitkeeper.cli:main"

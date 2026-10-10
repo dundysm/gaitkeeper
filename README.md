@@ -111,7 +111,7 @@ traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
 |---|---|---|
 | `demo` | The issue 145 setup, end to end | L1 |
 | `fetch` | Pinned policies and MJCF scenes, sha256 checked | |
-| `inspect` | Contract from an mjlab ONNX export, a Unitree `deploy.yaml` (G1 29 dof, H1) or a unitree_rl_gym deploy config | a reading |
+| `inspect` | Contract from an mjlab ONNX export, a Unitree `deploy.yaml` (G1 29 dof, H1), a unitree_rl_gym deploy config or a legged_gym training config | a reading |
 | `verify <trace>` | Boundaries B, A, C | L2 on a golden trace, L1 on a harness log or a self trace |
 | `verify <trace> --mjcf` | Plus D, the nominal closed loop and the model counterfactual | L2 for PHYSICS and POLICY_UNDER_TASK, L3 for PASS |
 | `residual` | D alone, plus parameter fits that stay out of the verdict | detection only |

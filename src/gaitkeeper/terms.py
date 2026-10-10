@@ -317,16 +317,17 @@ def stack_history(
 
 
 def term_values(
-    s: RawState, terms: list[dict[str, Any]], ctx: TermContext
+    s: RawState, terms: list[dict[str, Any]], ctx: TermContext, clip_then_scale: bool = True
 ) -> dict[str, np.ndarray]:
-    """Per-step value of each term after clip and scale, before history."""
+    """Per-step value of each term after clip and scale, before history. The group's
+    ``clip_then_scale`` says the order (Isaac Lab clips first; legged_gym scales first)."""
     out = {}
     for term in terms:
         fn = TERMS.get(term["id"])
         if fn is None:
             raise KeyError(f"no term '{term['id']}' in the library")
         p = term.get("params", {}) or {}
-        out[term_key(term)] = apply_clip_scale(_select(fn(s, p, ctx), p), term)
+        out[term_key(term)] = apply_clip_scale(_select(fn(s, p, ctx), p), term, clip_then_scale)
     return out
 
 
@@ -401,7 +402,7 @@ def build_observation(
     group = contract.get("policy_io.observation_groups.policy")
     terms = group["terms"]
     ctx = context_from_contract(contract)
-    values = term_values(s, terms, ctx)
+    values = term_values(s, terms, ctx, bool(group.get("clip_then_scale", True)))
     obs, _ = assemble(values, terms, s.reset, group.get("history", {}))
     return obs, values, term_slices(terms, group.get("history", {}))
 
@@ -415,6 +416,7 @@ class ObservationBuilder:
     def __init__(self, contract: Any):
         group = contract.get("policy_io.observation_groups.policy")
         self.terms = group["terms"]
+        self.clip_then_scale = bool(group.get("clip_then_scale", True))
         self.history = dict(group.get("history", {}) or {})
         self.length = int(self.history.get("length", 1))
         self.ctx = context_from_contract(contract)
@@ -445,7 +447,7 @@ class ObservationBuilder:
             prev_action=(np.zeros_like(prev_action) if reset else np.asarray(prev_action))[None],
             lin_vel_world=None if lin_vel_world is None else np.asarray(lin_vel_world, float)[None],
         )
-        values = term_values(s, self.terms, self.ctx)
+        values = term_values(s, self.terms, self.ctx, self.clip_then_scale)
         init = self.history.get("init", "repeat_first")
         for t in self.terms:
             x = values[term_key(t)][0]

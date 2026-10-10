@@ -42,6 +42,21 @@ def _read_any(path: str, robot: str = "unitree_g1_29dof") -> Contract:
 def _contract(args: argparse.Namespace) -> Contract:
     if args.contract:
         c = Contract.load(args.contract)
+    elif getattr(args, "legged_gym", None):
+        from .readers.legged_gym import read_legged_gym
+
+        if not args.legged_gym_base:
+            sys.exit("--legged-gym needs --legged-gym-base (legged_robot_config.py)")
+        c, findings = read_legged_gym(
+            args.legged_gym,
+            args.legged_gym_base,
+            cls=args.cfg_class,
+            urdf=args.urdf,
+            env_py=args.env_py,
+            robot=args.robot,
+        )
+        for f in findings:
+            print(f"reader: {f}", file=sys.stderr)
     elif getattr(args, "rl_gym", None):
         from .readers.rl_gym_deploy import read_rl_gym_deploy
 
@@ -731,6 +746,10 @@ _PATH_FLAGS = (
     "upstream",
     "upstream_deploy",
     "rl_gym",
+    "legged_gym",
+    "legged_gym_base",
+    "urdf",
+    "env_py",
 )
 
 
@@ -781,6 +800,13 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--yaml", help="deploy.yaml exported next to the policy")
         p.add_argument("--deploy", help="Unitree deploy.yaml, read as what the robot runs")
         p.add_argument("--rl-gym", help="unitree_rl_gym deploy_mujoco config (configs/*.yaml)")
+        p.add_argument(
+            "--legged-gym", help="legged_gym training config (.py), read without importing"
+        )
+        p.add_argument("--legged-gym-base", help="its base config, legged_robot_config.py")
+        p.add_argument("--urdf", help="the training URDF, for the DOF order")
+        p.add_argument("--env-py", help="the task's env file, for its gait period")
+        p.add_argument("--cfg-class", help="config class name when the file has several")
         p.add_argument("--robot", default="unitree_g1_29dof", help="SDK table for --deploy")
         p.add_argument("--preset", action="append", help="named training preset for unknown fields")
         p.add_argument(

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+* A reader for legged_gym training configs (`--legged-gym g1_config.py --legged-gym-base
+  legged_robot_config.py [--urdf ...] [--env-py ...]`): the config classes are evaluated
+  without importing legged_gym or Isaac Gym (literal values, base classes merged), gains
+  matched to joints by substring as legged_robot.py does, the DOF order read depth first
+  from the URDF, the observation layout picked by `num_observations` (legged_gym's base or
+  unitree_rl_gym's G1/H1 env), observations scaled then clipped, actions clipped, the
+  trained command ranges and heading mode recorded.
+* Fixed: an observation group's `clip_then_scale: false` was ignored, so a term with both
+  a clip and a scale was always clipped first. It now scales first when the group says so
+  (legged_gym, and wty-yy's `scale_first`).
+* `bench` also compares the policy step, the physics step, the trained command ranges,
+  the history length and the observation clips with the upstream config.
 * A reader for unitree_rl_gym's MuJoCo deploy configs (`--rl-gym configs/g1.yaml`), the
   template many community G1 policies ship with: gains, default angles, scales and sizes
   from the YAML, the observation and phase clock as `deploy_mujoco.py` builds them

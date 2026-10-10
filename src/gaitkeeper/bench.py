@@ -191,6 +191,40 @@ def unlisted_diff(port: Any, own: Any) -> list[str]:
     return out
 
 
+SETTINGS = (
+    ("timing.policy_dt", "policy step"),
+    ("timing.sim_dt", "physics step"),
+    ("policy_io.commands.base_velocity.trained", "trained command ranges"),
+    ("policy_io.observation_groups.policy.history.length", "history length"),
+)
+
+
+def setting_diff(a: Any, b: Any) -> list[str]:
+    """Scalar settings both state and that differ (a unstated value is not a difference)."""
+    out = []
+    for path, what in SETTINGS:
+        va, vb = a.get(path, None), b.get(path, None)
+        if va is None or vb is None:
+            continue
+        if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
+            if abs(va - vb) <= 1e-9 * max(1.0, abs(vb)):
+                continue
+        elif va == vb:
+            continue
+        out.append(f"{what}: contract {va} against {vb}")
+    clips = []
+    for x in (a, b):
+        g = x.get("policy_io.observation_groups.policy.terms", []) or []
+        clips.append({t.get("source_name") or t["id"]: t.get("clip") for t in g})
+    diff = sorted(k for k in clips[0] if k in clips[1] and clips[0][k] != clips[1][k])
+    if diff:
+        out.append(
+            f"observation clip differs on {', '.join(diff[:4])}"
+            + f": contract {clips[0][diff[0]]} against {clips[1][diff[0]]}"
+        )
+    return out
+
+
 def _compact(header: str, lines: list[str]) -> list[str]:
     """One line when nothing differs."""
     same = all(("no joint differs" in ln) or ("same on" in ln) for ln in lines)
@@ -277,6 +311,7 @@ def run_bench(
         except KeyError as e:
             lines = [f"not comparable ({e})"]
         lines += [ln.replace("port ", "contract ") for ln in unlisted_diff(contract, upstream)]
+        lines += setting_diff(contract, upstream)
         rep.deviation += _compact("The policy's contract against the upstream config:", lines)
     for key in stages:
         st = STAGES[key]

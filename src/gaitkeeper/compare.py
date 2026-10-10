@@ -360,7 +360,10 @@ def _alt_obs(
     history: dict[str, Any],
     ctx: TermContext,
 ) -> np.ndarray:
-    values = term_values(state, terms, ctx)
+    cts = bool(
+        (contract.get("policy_io.observation_groups.policy") or {}).get("clip_then_scale", True)
+    )
+    values = term_values(state, terms, ctx, cts)
     obs, _ = assemble(values, terms, state.reset, history)
     return obs
 
@@ -370,7 +373,7 @@ def check_a(trace: Trace, contract: Contract) -> BoundaryResult:
     terms, history = group["terms"], dict(group.get("history", {}))
     ctx = context_from_contract(contract)
     s = raw_state(trace)
-    values = term_values(s, terms, ctx)
+    values = term_values(s, terms, ctx, bool(group.get("clip_then_scale", True)))
     E, _ = assemble(values, terms, s.reset, history)
     O = trace["obs"].astype(np.float64)  # noqa: E741
     if O.shape != E.shape:

@@ -250,10 +250,11 @@ The traces are not published: their license waits on unitree_rl_lab issue 149.
 **More source engines.** A floor per engine, from traces recorded in that
 engine against its own model. mjlab is the only one calibrated.
 
-**legged_gym.** A preset for its explicit PD, and a reader for its configs,
-including lifting LSTM state into the policy. Not started. Listed here
-because the contract sources were designed to include it, not because it
-works.
+**legged_gym.** Readers for its training configs (classes evaluated without importing
+it, DOF order from the URDF) and for unitree_rl_gym's MuJoCo deploy configs. Recurrent
+policies run with their state carried. Checked against transcriptions of the code that
+builds the observation, and on rl_gym, where the training config, the deploy config and
+the policy agree; not yet against a golden trace from Isaac Gym, which needs a GPU.
 
 **Unseen harnesses.** The development logs cannot answer this. It needs
 harness logs that were not used to build the comparator, with labels that

@@ -1,0 +1,29 @@
+<robot name="g1_12dof_test">
+  <link name="pelvis"/>
+  <link name="left_hip_pitch_link"/>
+  <joint name="left_hip_pitch_joint" type="revolute"><parent link="pelvis"/><child link="left_hip_pitch_link"/></joint>
+  <link name="left_hip_roll_link"/>
+  <joint name="left_hip_roll_joint" type="revolute"><parent link="left_hip_pitch_link"/><child link="left_hip_roll_link"/></joint>
+  <link name="left_hip_yaw_link"/>
+  <joint name="left_hip_yaw_joint" type="revolute"><parent link="left_hip_roll_link"/><child link="left_hip_yaw_link"/></joint>
+  <link name="left_knee_link"/>
+  <joint name="left_knee_joint" type="revolute"><parent link="left_hip_yaw_link"/><child link="left_knee_link"/></joint>
+  <link name="left_ankle_pitch_link"/>
+  <joint name="left_ankle_pitch_joint" type="revolute"><parent link="left_knee_link"/><child link="left_ankle_pitch_link"/></joint>
+  <link name="left_ankle_roll_link"/>
+  <joint name="left_ankle_roll_joint" type="revolute"><parent link="left_ankle_pitch_link"/><child link="left_ankle_roll_link"/></joint>
+  <link name="right_hip_pitch_link"/>
+  <joint name="right_hip_pitch_joint" type="revolute"><parent link="pelvis"/><child link="right_hip_pitch_link"/></joint>
+  <link name="right_hip_roll_link"/>
+  <joint name="right_hip_roll_joint" type="revolute"><parent link="right_hip_pitch_link"/><child link="right_hip_roll_link"/></joint>
+  <link name="right_hip_yaw_link"/>
+  <joint name="right_hip_yaw_joint" type="revolute"><parent link="right_hip_roll_link"/><child link="right_hip_yaw_link"/></joint>
+  <link name="right_knee_link"/>
+  <joint name="right_knee_joint" type="revolute"><parent link="right_hip_yaw_link"/><child link="right_knee_link"/></joint>
+  <link name="right_ankle_pitch_link"/>
+  <joint name="right_ankle_pitch_joint" type="revolute"><parent link="right_knee_link"/><child link="right_ankle_pitch_link"/></joint>
+  <link name="right_ankle_roll_link"/>
+  <joint name="right_ankle_roll_joint" type="revolute"><parent link="right_ankle_pitch_link"/><child link="right_ankle_roll_link"/></joint>
+  <link name="torso_link"/>
+  <joint name="waist_yaw_joint" type="fixed"><parent link="pelvis"/><child link="torso_link"/></joint>
+</robot>

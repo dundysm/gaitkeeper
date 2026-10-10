@@ -111,7 +111,7 @@ traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
 |---|---|---|
 | `demo` | The issue 145 setup, end to end | L1 |
 | `fetch` | Pinned policies and MJCF scenes, sha256 checked | |
-| `inspect` | Contract from an mjlab ONNX export or a Unitree `deploy.yaml` (G1 29 dof, H1) | a reading |
+| `inspect` | Contract from an mjlab ONNX export, a Unitree `deploy.yaml` (G1 29 dof, H1) or a unitree_rl_gym deploy config | a reading |
 | `verify <trace>` | Boundaries B, A, C | L2 on a golden trace, L1 on a harness log or a self trace |
 | `verify <trace> --mjcf` | Plus D, the nominal closed loop and the model counterfactual | L2 for PHYSICS and POLICY_UNDER_TASK, L3 for PASS |
 | `residual` | D alone, plus parameter fits that stay out of the verdict | detection only |
@@ -122,6 +122,36 @@ traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
 | `run`, `check`, `envelope` | Closed loop, static and linearized checks, the command response map | L1 |
 | `infer` | Observation layout from a trace, abstaining when ambiguous | |
 | `deviation` | Deploy values against training values, per joint | |
+
+### Benchmark a port
+
+Someone else's harness runs your policy and it falls. `bench` runs the
+teleop-walking-benchmark tour one change at a time, from the policy as its authors
+deployed it to the full benchmark, and says which step costs the survival:
+
+```bash
+# read the port from its C++ adapter (needs g++ or clang++), then bench it
+gaitkeeper adapter policies/rl_gym/policy.cpp --mjcf assets/g1_29dof.xml --out contracts/
+gaitkeeper bench --adapter policies/rl_gym/policy.cpp --onnx policies/rl_gym/model.onnx \
+    --upstream configs/g1.yaml --mjcf assets/g1_29dof.xml --md rl_gym.md
+```
+
+```text
+  stage                                      survival  complete  pos err  yaw err
+  upstream config (as trained or deployed)    90.0 s     3/3       13 cm    3 deg
+  own setup                                  78.2 s     1/3       40 cm    8 deg
+  harness walks the arms                    22.4 s     0/3      138 cm   13 deg
+  plus punches (full benchmark)              9.8 s     0/3      171 cm   22 deg
+Finding   the random arm walk costs 55.8 s of mean survival (78.2 -> 22.4 s)
+Finding   switching from the upstream config to the policy's contract here (gains, poses,
+          observation) costs 11.8 s of mean survival (90.0 -> 78.2 s)
+phase clock: contract runs -1 policy steps (-20 ms, -9 deg of a 0.8 s gait) ahead of training
+unlisted kp: 17 of 17 joint(s) differ; largest left_elbow_joint contract 14.25 against 500
+```
+
+`--upstream` takes a contract, a Unitree `deploy.yaml` or a unitree_rl_gym deploy
+config. Without an adapter, give the bench contract with `--contract`/`--deploy` and the
+port with `--port`.
 
 <details>
 <summary><b>Usage examples, runner backends and controller assumptions</b></summary>

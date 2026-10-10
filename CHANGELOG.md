@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+* `gaitkeeper adapter policies/<name>/policy.cpp --mjcf ...`: reads a
+  teleop-walking-benchmark adapter without parsing it. The CUDA adapter is compiled for the
+  CPU with a shim (kernels run as loops, the TensorRT engine is replaced by a recorder), then
+  probed: finite differences around the benchmark's stance give the action map, target
+  bounds, every observation element's source and gain, the history and a gait clock's
+  period, phase and gate. Writes `<name>.trained.yaml` and `<name>.port.yaml`, and verifies
+  the port contract by building the observation both ways on random inputs. 18 of the
+  benchmark's 34 adapters read and verify; the rest are reported with the reason.
+  `gaitkeeper bench --adapter` goes from the adapter to the report in one command.
+* Observation terms take `params.index` (a permutation or subset of the term's elements,
+  as a port that feeds the command as [wz, vx, vy]) and a `constant` term (a fixed slot, as
+  a height command). Terms are keyed by `source_name`, so one id can appear twice.
+  `gait_phase_legs` takes `clock_offset_steps`.
 * `gaitkeeper bench`: the tour at a ladder of stages (own setup, harness holds the arms,
   harness walks them, punches), plus a port contract with arms still and under the full
   stack. Names the stages that cost survival, compares the port's values and its holding

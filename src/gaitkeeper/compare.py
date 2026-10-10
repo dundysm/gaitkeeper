@@ -28,9 +28,11 @@ from .terms import (
     RawState,
     StateLayout,
     TermContext,
+    _select,
     apply_clip_scale,
     assemble,
     context_from_contract,
+    term_key,
     term_slices,
     term_values,
 )
@@ -379,7 +381,7 @@ def check_a(trace: Trace, contract: Contract) -> BoundaryResult:
 
     def tol_for(h: dict[str, Any], vals: dict[str, np.ndarray] = values) -> np.ndarray:
         # Tolerances follow their values through the history layout.
-        tv = {t["id"]: _term_tol(t, contract, vals[t["id"]]) for t in terms}
+        tv = {term_key(t): _term_tol(t, contract, vals[term_key(t)]) for t in terms}
         return assemble(tv, terms, s.reset, h)[0]
 
     tol_full = tol_for(history)
@@ -390,7 +392,7 @@ def check_a(trace: Trace, contract: Contract) -> BoundaryResult:
         c = cols[tid]
         return bool(np.all(np.abs(O[:, c] - Ex[:, c]) <= tol[:, c]))
 
-    failing = [t["id"] for t in terms if not term_ok(E, t["id"])]
+    failing = [term_key(t) for t in terms if not term_ok(E, term_key(t))]
 
     # Group-level explanations first: timing, then history structure.
     group_cands: list[tuple[str, np.ndarray, np.ndarray]] = []
@@ -436,7 +438,7 @@ def check_a(trace: Trace, contract: Contract) -> BoundaryResult:
     group_hit = None
     if failing:
         hits = [
-            name for name, Ex, tl in group_cands if all(term_ok(Ex, t["id"], tl) for t in terms)
+            name for name, Ex, tl in group_cands if all(term_ok(Ex, term_key(t), tl) for t in terms)
         ]
         if len(hits) == 1:
             group_hit = hits[0]
@@ -446,7 +448,7 @@ def check_a(trace: Trace, contract: Contract) -> BoundaryResult:
 
     for t in terms:
         tid = t["id"]
-        c = cols[tid]
+        c = cols[term_key(t)]
         o, e, tol = O[:, c], E[:, c], tol_full[:, c]
         err = np.abs(o - e)
         tr = TermResult(
@@ -581,8 +583,12 @@ def _term_alternatives(
     for name, t2, c2, s2 in alts:
         tt = t2 or term
         vals = {
-            tt["id"]: apply_clip_scale(
-                _TERM_FN(tt["id"])(s2 or s, tt.get("params", {}), c2 or ctx), tt
+            term_key(tt): apply_clip_scale(
+                _select(
+                    _TERM_FN(tt["id"])(s2 or s, tt.get("params", {}), c2 or ctx),
+                    tt.get("params", {}),
+                ),
+                tt,
             )
         }
         win, _ = assemble(vals, [tt], (s2 or s).reset, history)

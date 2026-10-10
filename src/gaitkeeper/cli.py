@@ -388,23 +388,83 @@ def cmd_tour(args: argparse.Namespace) -> int:
     return 0 if out["complete"] == len(out["runs"]) else 5
 
 
+def _read_adapter(path: str, mjcf: str, cls: str = "Policy"):
+    from .readers.twb_probe import ProbeError, read_twb_adapter
+
+    try:
+        return read_twb_adapter(path, mjcf, cls)
+    except ProbeError as e:
+        print(f"gaitkeeper: {path}: unsupported: {e}", file=sys.stderr)
+        raise SystemExit(6) from None
+
+
+def cmd_adapter(args: argparse.Namespace) -> int:
+    r, cs, v = _read_adapter(args.adapter, args.mjcf, args.cls)
+    out = Path(args.out or ".")
+    out.mkdir(parents=True, exist_ok=True)
+    print(f"Adapter {r.name}: obs {r.obs_dim}, actions {r.act_dim}, owned() {r.owned}")
+    terms = ", ".join(
+        f"{t['source_name']}[{t['dim']}]" + ("*" if "index" in t else "") for t in r.terms
+    )
+    h = r.history
+    print(f"  observation: {terms}" + (" (* reordered or partial)" if "*" in terms else ""))
+    print(
+        f"  history {h['length']}"
+        + (f" {h['layout']}, {h['order']}, {h['init']}" if h["length"] > 1 else "")
+    )
+    if r.clock:
+        print(f"  clock {r.clock}")
+    held = [k for k, m in enumerate(r.p2m) if m >= r.owned]
+    print(
+        f"  harness holds {len(held)} policy joint(s); observed as {sorted(set(r.joint_obs[k] for k in held)) or '-'}"
+    )
+    for f in r.findings:
+        print(f"Finding   {f}")
+    for variant, c in cs.items():
+        path = out / f"{r.name}.{variant}.yaml"
+        c.save(path)
+        print(f"wrote {path}")
+    (out / f"{r.name}.probe.json").write_text(json.dumps(r.to_json(), indent=1, default=str))
+    if v["ok"]:
+        print(
+            f"Verified: gaitkeeper builds the adapter's observation to {v['max_abs']:.1g} on random inputs"
+        )
+        return 0
+    bad = {k: round(x, 4) for k, x in v["per_term"].items() if x >= 1e-4}
+    print(f"UNVERIFIED: the observation differs from the adapter's: {bad}")
+    return 5
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
     import yaml
 
     from .behavior import contract_header
     from .bench import STAGE_TEXT, run_bench
 
-    c = _contract(args)
+    if args.adapter:
+        _, cs, v = _read_adapter(args.adapter, args.mjcf)
+        if not v["ok"]:
+            print(
+                "warning: the adapter's observation is not reproduced (see gaitkeeper adapter)",
+                file=sys.stderr,
+            )
+        c, port = cs["trained"], cs["port"]
+    else:
+        c = _contract(args)
+        port = Contract.load(args.port) if args.port else None
     path = args.policy or args.onnx
     if not path:
         sys.exit("give --policy (or --onnx)")
-    port = Contract.load(args.port) if args.port else None
     wps = None
     if args.waypoints:
         d = yaml.safe_load(Path(args.waypoints).read_text())
         rows = d["waypoints"] if isinstance(d, dict) else d
         wps = [(float(r[0]), float(r[1]), float(r[2]) if len(r) > 2 else 0.0) for r in rows]
-    name = args.name or Path(args.contract or args.deploy or path).stem
+    name = args.name or (
+        Path(args.adapter).parent.name
+        if args.adapter
+        else Path(args.contract or args.deploy or path).stem
+    )
     print(contract_header(c))
     rep = run_bench(
         c,
@@ -628,6 +688,7 @@ _PATH_FLAGS = (
     "reference",
     "port",
     "waypoints",
+    "adapter",
 )
 
 
@@ -784,6 +845,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     sim_args(p)
     p.add_argument("--port", help="contract of what a benchmark port runs (ownership, gains, obs)")
+    p.add_argument(
+        "--adapter",
+        help="teleop-walking-benchmark policy.cpp: read both contracts from it (needs a C++ compiler)",
+    )
     p.add_argument("--stages", help="comma separated subset of own,arms_hold,arms_walk,punches")
     p.add_argument("--waypoints", help="YAML list of [x, y, yaw]; default the benchmark's draws")
     p.add_argument("--point-s", type=float, default=5.0)
@@ -793,6 +858,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--md", help="write the report as markdown")
     p.add_argument("--workers", type=int)
     p.set_defaults(fn=cmd_bench)
+
+    p = sub.add_parser(
+        "adapter",
+        help="read a teleop-walking-benchmark policy adapter (policy.cpp) into trained and port contracts",
+    )
+    p.add_argument("adapter", help="policies/<name>/policy.cpp")
+    p.add_argument("--mjcf", required=True, help="the benchmark's G1 MJCF (for armature gains)")
+    p.add_argument("--out", help="directory for <name>.trained.yaml, .port.yaml, .probe.json")
+    p.add_argument("--cls", default="Policy", help="policy class in the adapter's namespace")
+    p.set_defaults(fn=cmd_adapter)
 
     p = sub.add_parser("infer", help="observation layout from a trace, abstaining when ambiguous")
     p.add_argument("trace", nargs="?", help="golden trace directory or harness log .npz")

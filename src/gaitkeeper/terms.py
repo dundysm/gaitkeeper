@@ -227,7 +227,8 @@ def gait_phase_legs(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndar
     1.0); the clock runs from the episode start and is never zeroed."""
     period = float(p["period"])
     offset = float(p.get("offset", 0.5))
-    ph = np.mod(s.episode_step.astype(np.float64) * ctx.policy_dt, period) / period
+    k = s.episode_step.astype(np.float64) + int(p.get("clock_offset_steps", 0))
+    ph = np.mod(k * ctx.policy_dt, period) / period
     a, b = 2 * np.pi * ph, 2 * np.pi * (ph + offset)
     return np.stack([np.sin(a), np.sin(b), np.cos(a), np.cos(b)], axis=1)
 
@@ -244,6 +245,12 @@ def last_action(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
     return s.prev_action.copy()
 
 
+def constant(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    """Fixed values a harness feeds (a height command, a zeroed slot)."""
+    v = np.asarray(p["value"], dtype=np.float64).reshape(-1)
+    return np.repeat(v[None], len(s.episode_step), axis=0)
+
+
 TERMS: dict[str, TermFn] = {
     "base_ang_vel": base_ang_vel,
     "base_lin_vel": base_lin_vel,
@@ -254,7 +261,20 @@ TERMS: dict[str, TermFn] = {
     "joint_pos_rel": joint_pos_rel,
     "joint_vel_rel": joint_vel_rel,
     "last_action": last_action,
+    "constant": constant,
 }
+
+
+def term_key(t: dict[str, Any]) -> str:
+    """A term's name within its group: ``source_name`` when given (two entries may share an
+    id, for example a command split around other terms), else its id."""
+    return str(t.get("source_name") or t["id"])
+
+
+def _select(x: np.ndarray, p: dict[str, Any]) -> np.ndarray:
+    """``params.index``: the term's elements in this order (a permutation or a subset)."""
+    idx = p.get("index") if p else None
+    return x if idx is None else x[:, [int(i) for i in idx]]
 
 
 # -- assembling an observation -----------------------------------------------------
@@ -305,7 +325,8 @@ def term_values(
         fn = TERMS.get(term["id"])
         if fn is None:
             raise KeyError(f"no term '{term['id']}' in the library")
-        out[term["id"]] = apply_clip_scale(fn(s, term.get("params", {}), ctx), term)
+        p = term.get("params", {}) or {}
+        out[term_key(term)] = apply_clip_scale(_select(fn(s, p, ctx), p), term)
     return out
 
 
@@ -325,12 +346,14 @@ def assemble(
     init = history.get("init", "repeat_first")
     order = history.get("order", "oldest_first")
     layout = history.get("layout", "term_major")
-    windows = {t["id"]: stack_history(values[t["id"]], reset, length, init, order) for t in terms}
+    windows = {
+        term_key(t): stack_history(values[term_key(t)], reset, length, init, order) for t in terms
+    }
     t_len = reset.shape[0]
     if layout == "term_major":
-        parts = [windows[t["id"]].reshape(t_len, -1) for t in terms]
+        parts = [windows[term_key(t)].reshape(t_len, -1) for t in terms]
     elif layout == "time_major":
-        parts = [windows[t["id"]][:, k, :] for k in range(length) for t in terms]
+        parts = [windows[term_key(t)][:, k, :] for k in range(length) for t in terms]
     else:
         raise ValueError(f"unknown history layout {layout!r}")
     obs = np.concatenate(parts, axis=1)
@@ -342,16 +365,16 @@ def term_slices(terms: list[dict[str, Any]], history: dict[str, Any]) -> dict[st
     length = int(history.get("length", 1))
     layout = history.get("layout", "term_major")
     dims = [int(t["dim"]) for t in terms]
-    cols: dict[str, list[int]] = {t["id"]: [] for t in terms}
+    cols: dict[str, list[int]] = {term_key(t): [] for t in terms}
     pos = 0
     if layout == "term_major":
         for t, d in zip(terms, dims):
-            cols[t["id"]] = list(range(pos, pos + d * length))
+            cols[term_key(t)] = list(range(pos, pos + d * length))
             pos += d * length
     else:
         for _k in range(length):
             for t, d in zip(terms, dims):
-                cols[t["id"]].extend(range(pos, pos + d))
+                cols[term_key(t)].extend(range(pos, pos + d))
                 pos += d
     return {k: np.array(v) for k, v in cols.items()}
 
@@ -425,8 +448,8 @@ class ObservationBuilder:
         values = term_values(s, self.terms, self.ctx)
         init = self.history.get("init", "repeat_first")
         for t in self.terms:
-            x = values[t["id"]][0]
-            buf = self.buffers.get(t["id"])
+            x = values[term_key(t)][0]
+            buf = self.buffers.get(term_key(t))
             if reset or buf is None:
                 buf = np.repeat(x[None], self.length, axis=0)
                 if init == "zeros":
@@ -434,11 +457,11 @@ class ObservationBuilder:
             else:
                 buf = np.roll(buf, -1, axis=0)
                 buf[-1] = x
-            self.buffers[t["id"]] = buf
+            self.buffers[term_key(t)] = buf
         order = self.history.get("order", "oldest_first")
         win = {k: (b if order == "oldest_first" else b[::-1]) for k, b in self.buffers.items()}
         if self.history.get("layout", "term_major") == "term_major":
-            parts = [win[t["id"]].reshape(-1) for t in self.terms]
+            parts = [win[term_key(t)].reshape(-1) for t in self.terms]
         else:
-            parts = [win[t["id"]][k] for k in range(self.length) for t in self.terms]
+            parts = [win[term_key(t)][k] for k in range(self.length) for t in self.terms]
         return np.concatenate(parts)

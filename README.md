@@ -118,6 +118,7 @@ traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
 | `task` | A command schedule, held joints and punches, with no reference | L1 |
 | `tour` | A closed-loop waypoint tour; by default the teleop-walking-benchmark's, with its arm random walk and punches as options | L1 |
 | `bench` | The tour at each step from a policy's own setup to the full benchmark (arms held, arms walked, punches), with a port contract run and compared alongside; names the step that costs survival | L1 |
+| `adapter` | Reads a teleop-walking-benchmark policy adapter (`policy.cpp`) by compiling it for the CPU and probing it: joint map, scales, clips, observation layout, history, gait clock, gains. Writes trained and port contracts and checks them against the adapter on random inputs | L0 |
 | `run`, `check`, `envelope` | Closed loop, static and linearized checks, the command response map | L1 |
 | `infer` | Observation layout from a trace, abstaining when ambiguous | |
 | `deviation` | Deploy values against training values, per joint | |

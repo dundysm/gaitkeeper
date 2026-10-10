@@ -119,6 +119,11 @@ svg text { fill: var(--muted); font: 10px var(--f-mono); }
 """
 
 
+REPO = "https://github.com/dundysm/gaitkeeper"
+# Refused adapters with an open issue for the missing piece.
+ISSUES = {"handoff": 3, "holosoma": 5, "falcon": 5, "gr00t_wbc": 7, "decoupled_wbc": 7}
+
+
 def e(s: object) -> str:
     return html.escape(str(s))
 
@@ -253,6 +258,11 @@ def page(d: dict) -> tuple[str, str]:
             if p.get("benchmark_mujoco") is not None
             else ""
         )
+        + (
+            f' <a href="{REPO}/issues/{ISSUES[p["name"]]}">Help wanted: issue #{ISSUES[p["name"]]}</a>'
+            if p["name"] in ISSUES
+            else ""
+        )
         + "</span>"
         for p in sorted(notread, key=lambda p: p["name"])
     )
@@ -334,6 +344,18 @@ gaitkeeper bench --adapter twb/policies/rl_gym/policy.cpp --onnx twb/policies/rl
     --upstream unitree_rl_gym/deploy/deploy_mujoco/configs/g1.yaml \\
     --mjcf twb/assets/g1_29dof.xml --seeds 3 --md rl_gym.md</pre>
   <p>Source, method and every command: <a href="https://github.com/dundysm/gaitkeeper">github.com/dundysm/gaitkeeper</a>.</p>
+</section>
+
+<section>
+  <h2>Run it on your own policy</h2>
+  <p>The same checks, pointed at any G1 policy and config, in about a minute on a laptop:</p>
+<pre>gaitkeeper doctor --onnx policy.onnx --config &lt;your config&gt; --mjcf scene.xml</pre>
+  <p style="color: var(--muted); font-size: .92rem">The config is read by content: an Isaac Lab env.yaml, a Unitree deploy.yaml, a unitree_rl_gym or legged_gym config, or a contract. Doctor reports the contract fields no file states, the commands the policy ignores, and survival on the tour with the arms its own, moved at random and punched.</p>
+</section>
+
+<section>
+  <h2>Help</h2>
+  <p>Ports marked <i>help wanted</i> above are refused for one missing piece each, and each has an open issue. A verdict that looks wrong, a config gaitkeeper cannot read, or harness logs for a blind test are just as useful. <a href="https://github.com/dundysm/gaitkeeper/contribute">Good first issues</a> · <a href="https://github.com/dundysm/gaitkeeper/blob/main/CONTRIBUTING.md">Contributing</a> · <a href="https://github.com/dundysm/gaitkeeper/discussions">Discussions</a></p>
 </section>
 </div>
 """,

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 * `gaitkeeper doctor --onnx policy.onnx --config <config> --mjcf scene.xml`: one command for
   your own policy. Reports the contract fields no file states, the dead zones of the

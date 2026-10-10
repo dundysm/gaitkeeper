@@ -1,6 +1,6 @@
 # Status
 
-October 10, 2026. gaitkeeper 0.4.0 on PyPI (`pip install "gaitkeeper[sim]"`).
+October 10, 2026. gaitkeeper 0.5.0 on PyPI (`pip install "gaitkeeper[sim]"`).
 
 What works, what has been measured, what does not work yet, and what is left. The
 commands, the evidence levels and the method are in the [README](README.md); the
@@ -21,7 +21,7 @@ benchmark results are in the [G1 Port Audit](https://dundysm.github.io/gaitkeepe
 * **Recorders** for mjlab velocity envs (CPU) and unitree_rl_lab's G1 velocity task in
   Isaac Lab (GPU, run once).
 
-Tests: 210 pass in about 2.5 minutes on 8 cores with the fixtures and the mjlab golden
+Tests: 211 pass in about 2.5 minutes on 8 cores with the fixtures and the mjlab golden
 traces present; without them, each skip names the missing files.
 
 ## Measured

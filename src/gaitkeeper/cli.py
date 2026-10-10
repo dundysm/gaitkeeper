@@ -480,6 +480,12 @@ def cmd_bench(args: argparse.Namespace) -> int:
         name=name,
         progress=lambda k: print(f"  running: {STAGE_TEXT.get(k, k)}", file=sys.stderr),
     )
+    if args.adapter:
+        rep.notes.insert(
+            0,
+            "both contracts are read from the adapter: 'own setup' is the adapter's values with "
+            "the policy driving every joint it lists, not the upstream training config",
+        )
     if args.envelope:
         from .envelope import sweep
 

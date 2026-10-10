@@ -774,7 +774,7 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
             "file",
         )
         c.set("timing.policy_dt", POLICY_DT, "file", "main.cpp PERIOD_S")
-        c.set("timing.sim_dt", None, "unknown", "the benchmark's physics step is not read")
+        c.set("timing.sim_dt", None, "unknown", "the target model's step")
         c.set("timing.decimation", None, "unknown", "")
         c.set("timing.order", ["obs", "infer", "target", "pd", "step"], "default", "")
         c.set("timing.target_hold", "zoh", "default", "")
@@ -881,7 +881,7 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
         )
         kp, kd = {}, {}
         for nm, mi in zip(names, r.p2m):
-            known = mi < r.owned or mi < r.gains_len
+            known = mi < r.owned or (mi < r.gains_len and r.kp[mi] > 0)
             kp[nm] = r.kp[mi] if known else hold_kp[nm]
             kd[nm] = r.kd[mi] if known else hold_kd[nm]
             if variant == "port" and mi >= r.owned:
@@ -935,16 +935,24 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
         )
         rest = [nm for nm in allm if nm not in names]
         if rest:
+            # Motors below owned() that the policy does not list are the adapter's to hold
+            # (at its own target, with kp()); the rest the harness holds.
+            mi = {nm: allm.index(nm) for nm in rest}
+            own = {nm for nm in rest if mi[nm] < r.owned and mi[nm] < r.gains_len}
             c.set(
                 "control.unlisted",
                 {
-                    "pose": {nm: stance[nm] for nm in rest},
-                    "kp": {nm: hold_kp[nm] for nm in rest},
-                    "kd": {nm: hold_kd[nm] for nm in rest},
-                    "note": "held as the benchmark harness holds them: stance, armature gains",
+                    "pose": {
+                        nm: float(r.hold_target[mi[nm]]) if nm in own else stance[nm] for nm in rest
+                    },
+                    "kp": {nm: r.kp[mi[nm]] if nm in own else hold_kp[nm] for nm in rest},
+                    "kd": {nm: r.kd[mi[nm]] if nm in own else hold_kd[nm] for nm in rest},
+                    "note": "motors the policy does not list: below owned() the adapter holds "
+                    "them at its target with kp(); the harness holds the rest at its stance "
+                    "with armature gains",
                 },
-                "default",
-                "main.cpp: the harness holds motors the policy does not list",
+                "file",
+                detail + ": targets at zero action, kp(), owned()",
             )
         for k in ("effort_limit", "velocity_limit", "armature", "joint_friction", "joint_damping"):
             c.set(f"model.{k}", None, "unknown", "from the target model")

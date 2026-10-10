@@ -1,6 +1,6 @@
 # Status
 
-October 8, 2026.
+October 10, 2026.
 
 A humanoid locomotion policy that walks in the simulator it was trained in
 often fails in a second simulator, or scores nothing in someone else's
@@ -50,11 +50,13 @@ POLICY_UNDER_TASK, 5 UNDETERMINED or an L1 finding, 6 UNSUPPORTED.
 | `verify <trace> --mjcf` | Plus D, the nominal closed loop, and the model counterfactual when the source model was recorded. | L2 for PHYSICS and POLICY_UNDER_TASK, L3 for PASS with D at the floor |
 | `residual` | D alone, plus parameter fits that stay out of the verdict. | detection only |
 | `task` | A command schedule, held joints and punches, with no reference. | L1 |
+| `tour`, `bench` | The benchmark tour, and the tour at each step from a policy's own setup to the full benchmark, port alongside. | L1 |
+| `adapter` | A teleop-walking-benchmark `policy.cpp` read by compiling and probing it, into trained and port contracts, checked against the adapter. | L0 |
 | `run`, `check`, `envelope`, `infer`, `deviation` | Closed loop, static and linearized checks, the command response map, observation layout from a trace, deploy values against training values. | L1 |
 | `tools/e4.py` | Discretization terms of the training drive, from traces at two or more step sizes. | needs the traces |
 | `tools/results.py` | False confident attributions, abstention, detection per boundary. | |
 
-Tests: 182 pass in about 2.5 minutes on 8 cores when the fixtures and the
+Tests: 198 pass in about 2.5 minutes on 8 cores when the fixtures and the
 mjlab golden traces are present. Without them, 129 pass and 53 skip, and
 each skip names the missing files. Every row of the verdict table is a test.
 
@@ -146,25 +148,37 @@ step sizes cannot separate the terms and the tool says so. Three step sizes
 recover them. This shows the estimator works on a known drive. It does not
 show that PhysX is one.
 
-**teleop-walking-benchmark, 15 of 28 ports (L1, 2026-10-09).** Contracts read from each
-port's `policy.cpp` and, where published, its upstream config; command maps on the
-benchmark's own `g1_29dof.xml`; the benchmark's tour reproduced with `gaitkeeper tour`.
-Survival on the tour tracks the benchmark's over 11 policies (Pearson 0.94, Spearman 0.85).
-What changes a policy's score:
+**teleop-walking-benchmark, read from its adapters (L1, 2026-10-10).** `gaitkeeper adapter`
+compiles each port's CUDA `policy.cpp` for the CPU and probes it; 16 of the 34 adapters
+read into contracts whose observation gaitkeeper rebuilds exactly (to 1e-6 on random
+inputs). `gaitkeeper bench --adapter` then runs the benchmark's tour at each step from
+the adapter's values to the full benchmark. Over those 16 policies, survival on the full
+stack tracks the benchmark's own MuJoCo numbers (Pearson 0.94, Spearman 0.90), with no
+hand-written contract. What changes a policy's score:
 
-* The harness's holding gains (armature-derived, waist kp 28 to 40) make schoi fall; with
-  its own deploy gains (waist 300) it walks. wcompton also stands once the waist is stiffer.
-* Handing the arms to the harness breaks clobot and legged_rl_lab, which were trained to
-  drive them; with all 29 joints they stand and track.
-* The random arm walk alone ends rl_mjlab's and huru's tours (about 5 s; 51 to 67 s with
-  the arms still) and halves wty_cpp's and rl_lab's.
-* rl_gym, trained on a 12-dof G1 with the upper body welded, drifts 0.4 to 0.6 m/s at rest
-  with the harness's arm pose.
-* dm_agile falls standing still even with its own deploy.yaml, which the port matches.
+* Handing the arms to the harness breaks clobot (90 s to 2 s) and legged_rl_lab (81 s to
+  11 s), which were trained to drive them.
+* The random arm walk alone ends holosoma's, huru's, rl_mjlab's and robomimic's tours
+  (90 s to 5 to 9 s) and costs wty_cpp and rl_lab most of theirs.
+* Ports that hide the arms from the policy (rl_lab, wty_cpp observe them as an echo of
+  the action, robomimic as the default pose) survive the arm walk two to ten times longer
+  than the same policy seeing its arms move: 9.9 to 28 s, 14 to 23 s, 5 to 53 s.
+* dm_march loses 29 s to the port before any arm motion or punch (60.6 against 90 s).
+* schoi, wcompton, stepdown, g1_gym, nanog1 and dm_agile fall within 1.5 to 7 s with the
+  adapter's own values. For schoi and wcompton the upstream deploy gains (waist 300) make
+  them stand, measured earlier against their upstream configs.
+* Reading the adapters also found what reading their source had missed: clobot clips
+  actions to +-5, dm_march clamps every target to +-1 rad, g1_gym clamps targets to joint
+  limits, legged_rl_lab ramps its actions in over 0.8 s, and mturan33 reads the harness's
+  wxyz quaternion as xyzw (its roll observation is pi when upright).
 
-Not covered: nanog1, openwbt (recurrent, partial layouts), josabb (hand joints), sunny
-(gated weights), and the 8 non-velocity policies (reference motion, latents). Reported
-to the benchmark's author on unitree_rl_lab issue 145.
+Not read: amo, bfm_zero, mimic_lite, run_residual, sonic, gr00t_wbc, decoupled_wbc,
+wbc_agile (reference motion, latents, two-stage or TensorRT-native); asap and homie
+(observe joints they do not drive); josabb (hand joints); openwbt (a warped two-leg clock);
+falcon (a clock that runs only when standing); holosoma reads but its clock resets on
+standing, which gaitkeeper does not model, so its contract does not verify; mturan33
+(Euler angles from the quaternion); zealot and handoff (constant slots inside a history);
+wbc_agile_velocity (gravity mixed across axes); sunny (no published weights).
 
 ## Limitations
 

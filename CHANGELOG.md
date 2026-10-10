@@ -8,8 +8,9 @@
   probed: finite differences around the benchmark's stance give the action map, target
   bounds, every observation element's source and gain, the history and a gait clock's
   period, phase and gate. Writes `<name>.trained.yaml` and `<name>.port.yaml`, and verifies
-  the port contract by building the observation both ways on random inputs. 18 of the
-  benchmark's 34 adapters read and verify; the rest are reported with the reason.
+  the port contract by building the observation both ways on random inputs. 16 of the
+  benchmark's 34 adapters read and verify (holosoma reads but its stand-reset clock does not
+  verify); the rest are reported with the reason.
   `gaitkeeper bench --adapter` goes from the adapter to the report in one command.
 * Observation terms take `params.index` (a permutation or subset of the term's elements,
   as a port that feeds the command as [wz, vx, vy]) and a `constant` term (a fixed slot, as

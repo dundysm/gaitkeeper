@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+* `gaitkeeper bench`: the tour at a ladder of stages (own setup, harness holds the arms,
+  harness walks them, punches), plus a port contract with arms still and under the full
+  stack. Names the stages that cost survival, compares the port's values and its holding
+  of unlisted joints with the policy's own, writes JSON and markdown.
+* `RunConfig.unlisted_trajectory`: joints in `control.unlisted` can follow a trajectory, so
+  a legs-only policy gets the benchmark's arm walk too. `tour --arms-obs contract` keeps the
+  observation mode a contract's externals give each arm; a contract's non-arm externals
+  stay in place when the tour takes the arms.
+
 ## 0.2.0
 
 * `gaitkeeper tour`: a closed-loop waypoint tour (RunConfig.command_source,

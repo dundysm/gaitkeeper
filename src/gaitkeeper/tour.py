@@ -235,7 +235,9 @@ class TourOptions:
     waypoints: list[tuple[float, float, float]] | None = None  # None: the benchmark's draws
     point_s: float = BENCH_POINT_S
     arms: str = "policy"  # "policy", "hold" (at STANCE) or "walk" (the benchmark's random walk)
-    arms_obs: str = "real"  # how the policy sees arms it does not drive
+    arms_obs: str = (
+        "real"  # how the policy sees arms it does not drive; "contract": as its externals say
+    )
     hold_gains: str = "armature"  # "armature" (the benchmark's) or "policy" (the contract's)
     punches: str = "none"  # "none" or "benchmark"
     backend: str | None = None
@@ -264,8 +266,17 @@ def _tour_job(job: tuple) -> dict[str, Any]:
     )
     seconds = len(wps) * o.point_s
     ext = None
+    un_traj = None
     if o.arms != "policy":
         arms = [j for j in r.names if j in BENCH_ARMS]
+        # The contract's own externals (a port's held waist, say) stay; the arms are replaced.
+        base = [e for e in r.externals(RunConfig())]
+        contract_obs = {j: e.obs for e in base for j in e.joints}
+        ext = []
+        for e in base:
+            rest = [j for j in e.joints if j not in BENCH_ARMS]
+            if rest:
+                ext.append(External(rest, e.drive, e.pose, e.kp, e.kd, e.obs))
         if o.hold_gains == "armature":
             kp, kd = armature_gains(m, arms)
         else:
@@ -278,15 +289,27 @@ def _tour_job(job: tuple) -> dict[str, Any]:
                 for i, rj in enumerate(BENCH_ARM_RIGHT)
             }
         )
+        groups: dict[str, list[str]] = {}
+        for j in arms:
+            obs = contract_obs.get(j, "real") if o.arms_obs == "contract" else o.arms_obs
+            groups.setdefault(obs, []).append(j)
+        walk = None
         if o.arms == "walk":
             limits = {
                 j: tuple(m.jnt_range[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, j)])
                 for j in BENCH_ARMS
             }
             walk = bench_arm_walk(seed, seconds, limits)
-            ext = [External(arms, "trajectory", {j: walk[j] for j in arms}, kp, kd, o.arms_obs)]
-        else:
-            ext = [External(arms, "hold", {j: stance[j] for j in arms}, kp, kd, o.arms_obs)]
+            # Arms the policy does not list (a legs-only policy) are the harness's already:
+            # they follow the walk through control.unlisted.
+            unlisted = c.get("control.unlisted", None)
+            if unlisted:
+                un_traj = {j: walk[j] for j in BENCH_ARMS if j not in r.names}
+        for obs, js in groups.items():
+            if walk is not None:
+                ext.append(External(js, "trajectory", {j: walk[j] for j in js}, kp, kd, obs))
+            else:
+                ext.append(External(js, "hold", {j: stance[j] for j in js}, kp, kd, obs))
     pushes = []
     if o.punches == "benchmark":
         bodies = [m.body(m.jnt_bodyid[m.actuator_trnid[a, 0]]).name for a in range(m.nu)]
@@ -299,6 +322,7 @@ def _tour_job(job: tuple) -> dict[str, Any]:
             external=ext,
             pushes=pushes,
             seed=seed,
+            unlisted_trajectory=un_traj,
         )
     )
     return {"seed": seed, **(res.task or {})}

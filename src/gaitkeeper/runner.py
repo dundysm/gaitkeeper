@@ -108,6 +108,8 @@ class RunConfig:
     model_edit: Callable[[mujoco.MjModel], None] | None = None
     tail_s: float = 5.0
     record: bool = False
+    # joints in control.unlisted that follow {name: [[t, value], ...]} instead of their pose
+    unlisted_trajectory: dict[str, Any] | None = None
     contacts: bool = False  # log which bodies touch the world at every physics step
     physics: bool = False  # with record: log the state before every physics step (p/ keys)
     # Closed-loop command: called each policy step with (time, free-joint qpos) and returns
@@ -168,6 +170,7 @@ class Binding:
     model_notes: list[str] = field(default_factory=list)
     # joints the policy does not list, held by the harness: (actuator, qpos address, pose)
     unlisted: list = field(default_factory=list)
+    unlisted_names: list[str] = field(default_factory=list)
 
 
 _INTEGRATORS = {
@@ -388,7 +391,7 @@ class Runner:
             nm = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, j)
             k = float(kp.get(nm, 0.0) if isinstance(kp, dict) else kp)
             c = float(kd.get(nm, 0.0) if isinstance(kd, dict) else kd)
-            out.append((act_of[j], int(m.jnt_qposadr[j]), float(pose.get(nm, 0.0)), k, c))
+            out.append((act_of[j], int(m.jnt_qposadr[j]), float(pose.get(nm, 0.0)), k, c, nm))
         return out
 
     # -- model --
@@ -494,7 +497,7 @@ class Runner:
             else:
                 m.actuator_forcelimited[a] = 0
         unlisted = self._unlisted(m, jid, act_of)
-        for a, _, _, kp_u, kd_u in unlisted:
+        for a, _, _, kp_u, kd_u, _ in unlisted:
             m.actuator_gaintype[a] = mujoco.mjtGain.mjGAIN_FIXED
             m.actuator_biastype[a] = mujoco.mjtBias.mjBIAS_AFFINE
             m.actuator_dyntype[a] = mujoco.mjtDyn.mjDYN_NONE
@@ -527,7 +530,8 @@ class Runner:
             pd_every=pd_every,
             integrator=_INTEGRATOR_NAMES.get(int(m.opt.integrator), str(m.opt.integrator)),
             model_notes=list(lm.notes),
-            unlisted=[(a, q, pose) for a, q, pose, _, _ in unlisted],
+            unlisted=[(a, q, pose) for a, q, pose, _, _, _ in unlisted],
+            unlisted_names=[nm for *_, nm in unlisted],
         )
         return m, d, b
 
@@ -599,6 +603,17 @@ class Runner:
                 m.actuator_gainprm[a, 0] = kp[i]
                 m.actuator_biasprm[a, :3] = [0.0, -kp[i], -kd[i]]
 
+        un_traj: list[tuple[int, np.ndarray]] = []
+        for k, nm in enumerate(b.unlisted_names):
+            if cfg.unlisted_trajectory and nm in cfg.unlisted_trajectory:
+                tr = np.asarray(cfg.unlisted_trajectory[nm], dtype=float)
+                a_, q_, _ = b.unlisted[k]
+                b.unlisted[k] = (a_, q_, float(tr[0, 1]))
+                un_traj.append((a_, tr))
+        if cfg.unlisted_trajectory:
+            stray = set(cfg.unlisted_trajectory) - set(b.unlisted_names)
+            if stray:
+                raise ValueError(f"unlisted_trajectory: not unlisted joints: {sorted(stray)}")
         start_pose = np.where(owned, self.default, hold_pose)
         self.reset_state(m, d, b, cfg, start_pose, rng)
         q0, v0 = b.base_qadr, b.base_dadr
@@ -690,6 +705,8 @@ class Runner:
             target = np.where(owned, tgt, hold_pose)
             for i, tr in trajectories.items():
                 target[i] = np.interp(time, tr[:, 0], tr[:, 1])
+            for a_, tr in un_traj:
+                d.ctrl[a_] = np.interp(time, tr[:, 0], tr[:, 1])
             if log is not None:
                 log["obs"].append(obs.astype(np.float32))
                 log["action"].append(a.astype(np.float32))

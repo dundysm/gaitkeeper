@@ -388,6 +388,51 @@ def cmd_tour(args: argparse.Namespace) -> int:
     return 0 if out["complete"] == len(out["runs"]) else 5
 
 
+def cmd_bench(args: argparse.Namespace) -> int:
+    import yaml
+
+    from .behavior import contract_header
+    from .bench import STAGE_TEXT, run_bench
+
+    c = _contract(args)
+    path = args.policy or args.onnx
+    if not path:
+        sys.exit("give --policy (or --onnx)")
+    port = Contract.load(args.port) if args.port else None
+    wps = None
+    if args.waypoints:
+        d = yaml.safe_load(Path(args.waypoints).read_text())
+        rows = d["waypoints"] if isinstance(d, dict) else d
+        wps = [(float(r[0]), float(r[1]), float(r[2]) if len(r) > 2 else 0.0) for r in rows]
+    name = args.name or Path(args.contract or args.deploy or path).stem
+    print(contract_header(c))
+    rep = run_bench(
+        c,
+        args.mjcf,
+        path,
+        list(range(args.seeds)),
+        port=port,
+        stages=args.stages.split(",") if args.stages else None,
+        waypoints=wps,
+        point_s=args.point_s,
+        workers=args.workers,
+        backend=args.backend,
+        name=name,
+        progress=lambda k: print(f"  running: {STAGE_TEXT.get(k, k)}", file=sys.stderr),
+    )
+    if args.envelope:
+        from .envelope import sweep
+
+        env = sweep(c, args.mjcf, path, backend=args.backend, workers=args.workers)
+        rep.envelope = env.lines()
+    print("\n".join(rep.lines()))
+    if args.json:
+        Path(args.json).write_text(json.dumps(rep.to_json(), indent=1, default=str))
+    if args.md:
+        Path(args.md).write_text(rep.markdown())
+    return 0 if rep.gate() else 5
+
+
 def cmd_task(args: argparse.Namespace) -> int:
     from .diagnose import diagnose_task
     from .runner import Push, PushGenerator, load_schedule
@@ -572,7 +617,18 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 
 # Flags whose value must be an existing path.
-_PATH_FLAGS = ("contract", "onnx", "yaml", "deploy", "mjcf", "policy", "schedule", "reference")
+_PATH_FLAGS = (
+    "contract",
+    "onnx",
+    "yaml",
+    "deploy",
+    "mjcf",
+    "policy",
+    "schedule",
+    "reference",
+    "port",
+    "waypoints",
+)
 
 
 def _check_inputs(args: argparse.Namespace) -> str | None:
@@ -713,11 +769,30 @@ def main(argv: list[str] | None = None) -> int:
         help="who drives the arm joints: the policy, a hold at the benchmark's stance, "
         "or the benchmark's random walk",
     )
-    p.add_argument("--arms-obs", choices=["real", "echo_action", "default"], default="real")
+    p.add_argument(
+        "--arms-obs", choices=["real", "echo_action", "default", "contract"], default="real"
+    )
     p.add_argument("--hold-gains", choices=["armature", "policy"], default="armature")
     p.add_argument("--punches", choices=["none", "benchmark"], default="none")
     p.add_argument("--workers", type=int)
     p.set_defaults(fn=cmd_tour)
+
+    p = sub.add_parser(
+        "bench",
+        help="the tour at each step from the policy's own setup to the full benchmark, "
+        "with a port contract compared and run alongside",
+    )
+    sim_args(p)
+    p.add_argument("--port", help="contract of what a benchmark port runs (ownership, gains, obs)")
+    p.add_argument("--stages", help="comma separated subset of own,arms_hold,arms_walk,punches")
+    p.add_argument("--waypoints", help="YAML list of [x, y, yaw]; default the benchmark's draws")
+    p.add_argument("--point-s", type=float, default=5.0)
+    p.add_argument("--seeds", type=int, default=3)
+    p.add_argument("--envelope", action="store_true", help="add the command envelope")
+    p.add_argument("--name")
+    p.add_argument("--md", help="write the report as markdown")
+    p.add_argument("--workers", type=int)
+    p.set_defaults(fn=cmd_bench)
 
     p = sub.add_parser("infer", help="observation layout from a trace, abstaining when ambiguous")
     p.add_argument("trace", nargs="?", help="golden trace directory or harness log .npz")

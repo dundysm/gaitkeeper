@@ -145,3 +145,26 @@ def test_unlisted_joints_are_held_only_when_the_contract_says_so(url):
     c0, _ = _legs_only(url, None)
     _, _, b0 = Runner(c0, UMJ_G1, None).build(RunConfig(), "native_implicit")
     assert b0.unlisted == []
+
+
+def test_unlisted_joints_follow_a_trajectory_when_given(url):
+    import mujoco
+
+    from gaitkeeper.contract import Contract
+
+    c, keep = _legs_only(url, {"pose": {}, "kp": 80.0, "kd": 4.0})
+    d = c.to_dict()
+    for t in d["policy_io"]["observation_groups"]["policy"]["terms"]:
+        if t["id"] in ("joint_pos_rel", "joint_vel_rel", "last_action"):
+            t["dim"] = len(keep)
+            if isinstance(t.get("scale"), list):
+                t["scale"] = t["scale"][: len(keep)]
+    r = Runner(Contract.from_dict(d), UMJ_G1, None)
+    traj = {"left_elbow_joint": [[0.0, 0.0], [1.0, 0.8]]}
+    res = r.run(RunConfig(seconds=1.0, policy_mode="zero", unlisted_trajectory=traj, record=True))
+    m = mujoco.MjModel.from_xml_path(str(UMJ_G1))
+    q = m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, "left_elbow_joint")]
+    qpos = np.asarray(res.log["qpos"])[:, q]
+    assert qpos[0] == pytest.approx(0.0, abs=0.05) and qpos[-1] > 0.4
+    with pytest.raises(ValueError, match="not unlisted"):
+        r.run(RunConfig(seconds=0.1, policy_mode="zero", unlisted_trajectory={"nope": [[0, 0]]}))

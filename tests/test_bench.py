@@ -1,0 +1,85 @@
+import json
+import math
+
+from gaitkeeper.bench import BenchReport, attribute
+
+
+def _st(surv, complete=0, n=2):
+    return {
+        "runs": [{}] * n,
+        "seconds": 20.0,
+        "mean_survival_s": surv,
+        "complete": complete,
+        "pos_err_cm": math.nan,
+        "yaw_err_deg": 4.0,
+    }
+
+
+def test_attribution_names_the_costly_steps_largest_first():
+    st = {"own": _st(20, 2), "arms_hold": _st(19), "arms_walk": _st(6), "punches": _st(4)}
+    f = attribute(st, 20.0)
+    assert len(f) == 1 and f[0].startswith("the random arm walk costs 13.0 s")
+    st["punches"] = _st(0.5)
+    f = attribute(st, 20.0)
+    assert [x.split(" costs")[0] for x in f] == ["the random arm walk", "punching"]
+
+
+def test_attribution_says_when_the_policy_falls_on_its_own_and_when_the_port_helps():
+    f = attribute({"own": _st(8), "punches": _st(7), "port": _st(16)}, 20.0)
+    assert f[0].startswith("falls in its own setup")
+    assert any("the port survives 9.0 s longer" in x for x in f)
+
+
+def test_report_gate_and_formats():
+    rep = BenchReport("p", 20.0, {"own": _st(20, 2), "punches": _st(5, 0)})
+    rep.findings = attribute(rep.stages, 20.0)
+    assert not rep.gate()
+    text = "\n".join(rep.lines())
+    assert "plus punches (full benchmark)" in text and "Finding   punching costs 15.0 s" in text
+    md = rep.markdown()
+    assert "| own setup | 20.0 | 2/2 | – | 4 |" in md
+    json.dumps(rep.to_json())
+    rep.stages["port"] = _st(20, 2)
+    assert rep.gate()
+
+
+def test_bench_command_runs_the_ladder_on_the_g1(tmp_path, capsys):
+    from assets import UMJ_G1, URL_G1, need
+
+    need(UMJ_G1, URL_G1 / "deploy.yaml")
+    from gaitkeeper.cli import main
+
+    wp = tmp_path / "wp.yaml"
+    wp.write_text("waypoints:\n  - [0.3, 0.0, 0.0]\n")
+    out, md = tmp_path / "b.json", tmp_path / "b.md"
+    argv = ["bench", "--deploy", str(URL_G1 / "deploy.yaml"), "--onnx", str(URL_G1 / "policy.onnx")]
+    argv += ["--mjcf", str(UMJ_G1), "--waypoints", str(wp), "--point-s", "2", "--seeds", "1"]
+    argv += ["--stages", "own,arms_walk", "--json", str(out), "--md", str(md)]
+    code = main(argv)
+    text = capsys.readouterr().out
+    assert "own setup" in text and "harness walks the arms" in text
+    d = json.loads(out.read_text())
+    assert d["command"] == "bench" and list(d["stages"]) == ["own", "arms_walk"]
+    assert md.read_text().startswith("# gaitkeeper bench")
+    assert code in (0, 5)
+
+
+class _C:
+    def __init__(self, unlisted):
+        self.u = unlisted
+
+    def get(self, path, default=None):
+        assert path == "control.unlisted"
+        return self.u if self.u is not None else default
+
+
+def test_unlisted_diff_reports_how_the_port_holds_the_arms():
+    from gaitkeeper.bench import unlisted_diff
+
+    def c(kp):
+        return _C({"pose": {"a": 0.2, "b": 0.0}, "kp": {"a": kp, "b": 40.0}})
+
+    lines = unlisted_diff(c(1.3), c(40.0))
+    assert lines[0] == "unlisted pose: same on 2 joint(s)"
+    assert lines[1] == "unlisted kp: 1 of 2 joint(s) differ; largest a port 1.3 against 40"
+    assert unlisted_diff(_C(None), c(1.0))[0].endswith("own contract holds them (control.unlisted)")

@@ -3,11 +3,13 @@
 </p>
 
 <p align="center">
+  <a href="https://pypi.org/project/gaitkeeper/"><img alt="PyPI" src="https://img.shields.io/pypi/v/gaitkeeper?color=3776ab"></a>
   <a href="https://github.com/dundysm/gaitkeeper/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dundysm/gaitkeeper/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3776ab">
   <img alt="MuJoCo on CPU" src="https://img.shields.io/badge/MuJoCo-CPU-1f6feb">
   <a href="https://github.com/dundysm/gaitkeeper/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2ea043"></a>
   <a href="https://github.com/dundysm/gaitkeeper/blob/main/STATUS.md"><img alt="Status: early" src="https://img.shields.io/badge/status-early-d29922"></a>
+  <a href="https://github.com/dundysm/gaitkeeper/blob/main/CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-2ea043"></a>
 </p>
 
 A humanoid locomotion policy that walks in the simulator it was trained in often
@@ -469,6 +471,16 @@ contribution: [docs/BLIND_TEST.md](https://github.com/dundysm/gaitkeeper/blob/ma
 protocol, and `tools/blind.py` scores only against the committed hashes. Start with a
 [blind test issue](https://github.com/dundysm/gaitkeeper/issues/new?template=blind-test.md).
 Results are published whatever they are.
+
+## Contributing
+
+Contributions are welcome, and most of the useful ones need no code: run `gaitkeeper
+doctor` on your own policy and report what it gets wrong, ask for a reader for your config
+format, or send labeled harness logs. For code, issues labeled
+[good first issue](https://github.com/dundysm/gaitkeeper/labels/good%20first%20issue) are a
+place to start. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the layout and how to add
+a reader; questions go in [Discussions](https://github.com/dundysm/gaitkeeper/discussions).
+If you use gaitkeeper in a paper, [CITATION.cff](CITATION.cff) has the citation.
 
 ## License
 

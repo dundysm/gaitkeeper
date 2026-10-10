@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use gaitkeeper in your work, please cite it as below."
+title: "gaitkeeper: sim-to-sim contract, physics and task checks for humanoid locomotion policies"
+type: software
+authors:
+  - family-names: Pasupuleti
+    given-names: Dundy
+repository-code: "https://github.com/dundysm/gaitkeeper"
+url: "https://dundysm.github.io/gaitkeeper/results/"
+license: Apache-2.0
+version: 0.5.0
+date-released: "2026-10-10"
+keywords:
+  - humanoid
+  - locomotion
+  - sim2sim
+  - reinforcement learning
+  - MuJoCo
+  - robotics

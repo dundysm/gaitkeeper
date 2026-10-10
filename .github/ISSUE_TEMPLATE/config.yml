@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/dundysm/gaitkeeper/discussions
+    about: How-to questions, ideas and results to share go in Discussions.
+  - name: Security report
+    url: https://github.com/dundysm/gaitkeeper/security/advisories/new
+    about: Please report vulnerabilities privately.

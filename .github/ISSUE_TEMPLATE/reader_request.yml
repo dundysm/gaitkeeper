@@ -1,0 +1,29 @@
+name: Reader request
+description: A training or deploy config format gaitkeeper cannot read yet
+labels: [enhancement, reader]
+body:
+  - type: input
+    id: stack
+    attributes:
+      label: Training or deploy stack
+      placeholder: "e.g. mjlab, HumanoidVerse, a custom Isaac Lab task"
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example file
+      description: A link to a real example of the format (repository, path and commit), or paste a trimmed copy.
+    validations:
+      required: true
+  - type: textarea
+    id: missing
+    attributes:
+      label: What the file holds
+      description: Which of joint order, gains, default pose, action scale, observation layout and command ranges it states, as far as you know.
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Help
+      options:
+        - label: I would like to write this reader myself (see CONTRIBUTING.md, "Adding a reader")

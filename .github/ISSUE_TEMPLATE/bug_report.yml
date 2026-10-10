@@ -1,0 +1,45 @@
+name: Bug report
+description: A crash, a misread config, or a verdict you think is wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting. The command and its full output are what make a report usable.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact gaitkeeper command you ran.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The full output or traceback.
+      render: text
+  - type: textarea
+    id: files
+    attributes:
+      label: Policy and config
+      description: Where the policy, config and MJCF come from (a link or a repository and commit), if you can share them.
+  - type: input
+    id: version
+    attributes:
+      label: gaitkeeper version
+      placeholder: "gaitkeeper --version"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Python, MuJoCo and OS
+      placeholder: "Python 3.12, mujoco 3.3.5, Ubuntu 24.04"

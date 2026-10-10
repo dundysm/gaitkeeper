@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 * `gaitkeeper tour`: a closed-loop waypoint tour (RunConfig.command_source,
   gaitkeeper.tour). By default the tour of rhoyn/teleop-walking-benchmark, with its

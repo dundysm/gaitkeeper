@@ -26,6 +26,10 @@ Fixes from an external audit of 0.5.0.
   every option has help text; `adapter` reports MATCHES ADAPTER / DIFFERS FROM ADAPTER
   rather than "verified", which the README reserves for L2.
 * `fetch` no longer suggests `fetch golden`, which does not exist yet.
+* Release safety: a tag publishes only if its commit is on main and the full CI passes on
+  it; workflow actions are pinned to commit SHAs (Dependabot keeps them current); CI also
+  runs on macOS; ruff is pinned; `mujoco` is capped below 4. The sdist carries the test
+  helpers, fixtures and tools, so its tests run from the tarball.
 * Docs: corrected the arm-walk survival (about 11 s, not 15), the number of refused
   adapters (17), test timings, and run times; the results page computes its correlations
   from the published values and states how much three long-surviving ports carry.

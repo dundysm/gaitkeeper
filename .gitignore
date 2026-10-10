@@ -6,3 +6,6 @@ __pycache__/
 runs/
 MUJOCO_LOG.TXT
 build/
+dist/
+*.onnx
+.cache/

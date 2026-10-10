@@ -11,7 +11,7 @@ D = Path(__file__).parent / "data" / "legged_gym"
 def _read(**kw):
     return read_legged_gym(
         D / "g1_config.py",
-        D / "base_config.py",
+        D / "legged_robot_config.py",
         urdf=D / "g1_12dof.urdf",
         env_py=D / "g1_env.py",
         **kw,
@@ -65,7 +65,7 @@ def test_reader_refuses_an_unknown_layout(tmp_path):
         (D / "g1_config.py").read_text().replace("num_observations = 47", "num_observations = 50")
     )
     with pytest.raises(ValueError, match="fits neither"):
-        read_legged_gym(p, D / "base_config.py", urdf=D / "g1_12dof.urdf")
+        read_legged_gym(p, D / "legged_robot_config.py", urdf=D / "g1_12dof.urdf")
 
 
 def _variant(tmp_path, old, new):
@@ -74,7 +74,7 @@ def _variant(tmp_path, old, new):
     p = tmp_path / "g1_config.py"
     p.write_text(src.replace(old, new))
     return read_legged_gym(
-        p, D / "base_config.py", urdf=D / "g1_12dof.urdf", env_py=D / "g1_env.py"
+        p, D / "legged_robot_config.py", urdf=D / "g1_12dof.urdf", env_py=D / "g1_env.py"
     )
 
 

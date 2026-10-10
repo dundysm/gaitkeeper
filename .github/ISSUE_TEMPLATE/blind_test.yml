@@ -1,0 +1,37 @@
+name: Blind test submission
+description: Seal the labels for harness logs you want gaitkeeper scored on, before sending them
+title: "Blind test: <your harness>"
+labels: [blind-test]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Protocol: [docs/BLIND_TEST.md](https://github.com/dundysm/gaitkeeper/blob/main/docs/BLIND_TEST.md).
+        Do not attach `labels.json` here until the outputs hash has been posted.
+  - type: input
+    id: commitment
+    attributes:
+      label: Labels commitment
+      description: The sha256 printed by `python tools/blind.py seal labels.json`.
+      placeholder: "labels sha256 ..."
+    validations:
+      required: true
+  - type: textarea
+    id: harness
+    attributes:
+      label: Harness
+      description: Name, simulator and version, physics step, policy and robot.
+    validations:
+      required: true
+  - type: input
+    id: logs
+    attributes:
+      label: Number of logs
+      placeholder: "<n>, of which <k> you believe are clean"
+    validations:
+      required: true
+  - type: input
+    id: delivery
+    attributes:
+      label: How you will send the folder
+      placeholder: "a link to a release or a dataset, or 'please contact me'"

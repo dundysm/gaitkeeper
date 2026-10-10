@@ -16,7 +16,8 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
-    "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
@@ -35,9 +36,9 @@ Issues = "https://github.com/dundysm/gaitkeeper/issues"
 Changelog = "https://github.com/dundysm/gaitkeeper/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff>=0.4", "onnx>=1.15"]
+dev = ["pytest>=7", "ruff==0.16.8", "onnx>=1.15"]
 # The closed-loop runner, checks and envelope simulate in MuJoCo on the CPU.
-sim = ["mujoco>=3.3"]
+sim = ["mujoco>=3.3,<4"]
 # The recorder runs inside the training stack. For mjlab it needs the pinned
 # versions below; they are listed for reference and installed separately.
 record-mjlab = ["mjlab==1.2.0", "mujoco==3.5.0", "mujoco-warp==3.5.0", "warp-lang==1.12.*", "scipy"]

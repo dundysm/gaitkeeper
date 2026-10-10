@@ -483,7 +483,7 @@ Every number above comes from cases built alongside the comparator. If you have 
 of your own, a few of its logs, with labels you seal before sending, are the most useful
 contribution: [docs/BLIND_TEST.md](https://github.com/dundysm/gaitkeeper/blob/main/docs/BLIND_TEST.md) describes the format and the
 protocol, and `tools/blind.py` scores only against the committed hashes. Start with a
-[blind test issue](https://github.com/dundysm/gaitkeeper/issues/new?template=blind-test.md).
+[blind test issue](https://github.com/dundysm/gaitkeeper/issues/new?template=blind_test.yml).
 Results are published whatever they are.
 
 ## Contributing

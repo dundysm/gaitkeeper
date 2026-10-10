@@ -1,0 +1,6 @@
+# The sdist carries the test suite with its helpers and small fixtures, so it runs from
+# the tarball (downloaded third-party files are fetched, never shipped).
+graft tests
+recursive-include tools *.py
+include CHANGELOG.md CITATION.cff CONTRIBUTING.md STATUS.md
+global-exclude __pycache__ *.py[co] *.so

@@ -113,3 +113,26 @@ def test_adapter_command_writes_both_contracts(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code == 0 and "Verified" in out and "velocity_commands[3]*" in out
     assert (tmp_path / "toy.trained.yaml").exists() and (tmp_path / "toy.port.yaml").exists()
+
+
+def _load_toy(cache: str) -> str:
+    import os
+
+    os.environ["GAITKEEPER_CACHE"] = cache
+    from gaitkeeper.readers.twb_adapter import Adapter
+
+    Adapter(TOY)
+    return "ok"
+
+
+@needs_cxx
+def test_concurrent_builds_never_load_a_partial_library(tmp_path):
+    """Several processes building the same adapter into an empty cache all load it."""
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    with ProcessPoolExecutor(4, mp_context=multiprocessing.get_context("spawn")) as ex:
+        out = list(ex.map(_load_toy, [str(tmp_path)] * 8))
+    assert out == ["ok"] * 8
+    left = sorted(p.name for p in (tmp_path / "twb_adapters").iterdir())
+    assert len(left) == 1 and left[0].endswith(".so"), left

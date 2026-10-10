@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -340,13 +341,23 @@ def build(policy_cpp: str | Path, cls: str = "Policy") -> Path:
     lib = d / f"{ns}_{cls}_{key}.so"
     if lib.exists():
         return lib
-    cpp = d / f"{ns}_{cls}_{key}.cpp"
+    # Compile under names unique to this process, then move the library into place in one
+    # step: a concurrent build or load never sees a partly written file, and a compile that
+    # is killed leaves only a temporary that is never reused.
+    tag = f".{os.getpid()}.{uuid.uuid4().hex[:8]}"
+    cpp = d / f"{ns}_{cls}_{key}{tag}.cpp"
+    tmp = d / f"{ns}_{cls}_{key}{tag}.so.part"
     cpp.write_text(code)
-    cmd = [_compiler(), "-std=c++17", "-O1", "-shared", "-fPIC", "-w", str(cpp), "-o", str(lib)]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        lines = [ln for ln in r.stderr.splitlines() if "error" in ln][:8]
-        raise RuntimeError(f"compiling {policy_cpp} for the CPU failed:\n" + "\n".join(lines))
+    cmd = [_compiler(), "-std=c++17", "-O1", "-shared", "-fPIC", "-w", str(cpp), "-o", str(tmp)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            lines = [ln for ln in r.stderr.splitlines() if "error" in ln][:8]
+            raise RuntimeError(f"compiling {policy_cpp} for the CPU failed:\n" + "\n".join(lines))
+        os.replace(tmp, lib)
+    finally:
+        cpp.unlink(missing_ok=True)
+        tmp.unlink(missing_ok=True)
     return lib
 
 

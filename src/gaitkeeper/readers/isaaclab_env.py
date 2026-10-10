@@ -186,7 +186,9 @@ def read_isaaclab_env(
 
     # observations
     grp = y["observations"]["policy"]
-    gh = int(grp.get("history_length") or 0)
+    # ObservationManager._prepare_terms: a group history_length that is set overrides every
+    # term's own; only when the group leaves it unset does each term keep its own.
+    group_h = grp.get("history_length")
     terms, hist = [], set()
     n = len(names)
     for key, t in grp.items():
@@ -233,7 +235,7 @@ def read_isaaclab_env(
                 "params": params,
             }
         )
-        hist.add(int(t.get("history_length") or 0) or gh)
+        hist.add(int(group_h) if group_h is not None else int(t.get("history_length") or 0))
     if len(hist) > 1:
         raise ValueError(f"per-term history lengths differ: {sorted(hist)}")
     H = max(hist.pop() if hist else 1, 1)

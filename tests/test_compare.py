@@ -108,3 +108,47 @@ def test_invalid_input(files):
 
     rep = verify(Trace({"obs": np.zeros((3, 2))}, {}, "harness"), files)
     assert rep.verdict == "INVALID_INPUT"
+
+
+def test_a_clipping_deploy_passes_c_when_the_contract_records_the_clip(harness, files, policy):
+    """Boundary C applies the contract's processed-target clip, as the runner does."""
+    names = list(files.get("policy_io.joints.names"))
+    tr = harness.standard()
+    t = tr["target"].astype(np.float64)
+    of = np.array([files.get("control.actions.joint_pos.offset")[n] for n in names])
+    tn = list(tr.meta.get("target_joint_names", names))
+    col = [names.index(n) for n in tn]
+    # A band narrow enough that every joint clips on some rows.
+    half = 0.5 * np.abs(t - of[col][None]).max(0)
+    lo, hi = of[col] - half, of[col] + half
+    tc = np.clip(t, lo[None], hi[None])
+    tr.arrays["target"] = tc.astype(np.float32)
+    tr.arrays["effort"] = harness.effort(tc).astype(np.float32)
+    assert (tc != t).any(0).all()
+
+    pairs = [None] * len(names)
+    for j, i in enumerate(col):
+        pairs[i] = [float(lo[j]), float(hi[j])]
+    clipped = files.copy()
+    clipped.set("control.actions.joint_pos.clip", pairs, "user", "test")
+    clipped.set("control.actions.joint_pos.clip_stage", "processed", "user", "test")
+    rep = verify(tr, clipped, policy)
+    assert rep.boundaries["C"].status == "pass", rep.summary()
+    # Without the clip in the contract the same trace is a mapping failure.
+    assert verify(tr, files, policy).boundaries["C"].status == "fail"
+
+
+def test_action_clip_shapes():
+    from gaitkeeper.contract import Contract, action_clip_pairs
+
+    c = Contract({})
+    assert action_clip_pairs(c, 3) is None
+    c.set("control.actions.joint_pos.clip", [-1.0, 2.0], "file", "t")
+    assert action_clip_pairs(c, 3) == [(-1.0, 2.0)] * 3
+    c.set("control.actions.joint_pos.clip", [[-1, 1], [-2, 2], [-3, 3]], "file", "t")
+    assert action_clip_pairs(c, 3)[2] == (-3.0, 3.0)
+    c.set("control.actions.joint_pos.clip", [[-1, 1]], "file", "t")
+    with pytest.raises(ValueError, match="joint_pos.clip"):
+        action_clip_pairs(c, 3)
+    c.set("control.actions.joint_pos.clip_stage", "none", "file", "t")
+    assert action_clip_pairs(c, 3) is None

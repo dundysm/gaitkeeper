@@ -42,3 +42,15 @@ def test_golden_trace_passes_against_the_files_contract():
     c, _ = read_mjlab_export(ONNX, YAML)
     rep = verify(Trace.load(GOLDEN), c, OnnxPolicy(ONNX))
     assert rep.verdict == "PASS", rep.summary()
+
+
+def test_deploy_yaml_clip_in_either_shape_reaches_the_runner():
+    from gaitkeeper.contract import Contract, action_clip_pairs
+    from gaitkeeper.readers.mjlab_export import _clip_list
+
+    for raw in ([-3, 3], [[-3, 3], [-2, 2]]):
+        c = Contract({})
+        c.set("control.actions.joint_pos.clip", _clip_list(raw), "file", "t")
+        c.set("control.actions.joint_pos.clip_stage", "processed", "file", "t")
+        pairs = action_clip_pairs(c, 2)
+        assert pairs[0] == (-3.0, 3.0) and len(pairs) == 2

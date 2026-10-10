@@ -193,6 +193,27 @@ def _repr_list(dumper: yaml.SafeDumper, data: list) -> yaml.Node:
 _Dumper.add_representer(list, _repr_list)
 
 
+def action_clip_pairs(contract: Contract, n: int) -> list[tuple[float, float]] | None:
+    """The processed-target clip as one (low, high) pair per policy joint, or None.
+
+    Readers record either one pair per joint or a single [low, high] for every joint.
+    Anything else is refused with the field named, so a malformed clip never becomes a
+    silent no-op or a crash deep inside a run."""
+    path = "control.actions.joint_pos.clip"
+    clip = contract.get(path, None)
+    if not clip or contract.get("control.actions.joint_pos.clip_stage", "processed") == "none":
+        return None
+    if len(clip) == 2 and all(isinstance(v, (int, float)) for v in clip):
+        lo, hi = float(clip[0]), float(clip[1])
+        return [(lo, hi)] * n
+    if len(clip) != n or any(not isinstance(p, (list, tuple)) or len(p) != 2 for p in clip):
+        raise ValueError(
+            f"{path}: expected one [low, high] per policy joint ({n}) or a single "
+            f"[low, high], got {clip!r}"
+        )
+    return [(float(lo), float(hi)) for lo, hi in clip]
+
+
 def sha256_file(path: str | Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:

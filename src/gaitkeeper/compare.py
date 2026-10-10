@@ -22,7 +22,7 @@ from typing import Any
 
 import numpy as np
 
-from .contract import Contract
+from .contract import Contract, action_clip_pairs
 from .tables import TABLES
 from .terms import (
     RawState,
@@ -727,9 +727,15 @@ def check_c(trace: Trace, contract: Contract) -> BoundaryResult:
     col = [pnames.index(n) for n in tnames]  # target column j holds policy joint col[j]
     sc, of = scale[col], offset[col]
     raw_rows = raw[rows_step][:, col]
+    clip = action_clip_pairs(contract, len(pnames))
+    lo = hi = None
+    if clip is not None:
+        cl = np.asarray(clip, dtype=np.float64)[col]
+        lo, hi = cl[:, 0], cl[:, 1]
 
     def expected(r: np.ndarray) -> np.ndarray:
-        return r * sc[None] + of[None]
+        e = r * sc[None] + of[None]
+        return e if lo is None else np.clip(e, lo[None], hi[None])
 
     def tol_t(r: np.ndarray, e: np.ndarray) -> np.ndarray:
         return EXACT_REL * np.maximum(1.0, np.abs(e)) + np.abs(r) * rs + ro

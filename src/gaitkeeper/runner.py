@@ -37,7 +37,7 @@ from typing import Any
 import mujoco
 import numpy as np
 
-from .contract import Contract
+from .contract import Contract, action_clip_pairs
 from .models import find_id, load_model
 from .terms import ObservationBuilder, quat_to_mat
 
@@ -298,7 +298,7 @@ class Runner:
         of = contract.get("control.actions.joint_pos.offset")
         self.scale = np.array([sc[n] for n in self.names])
         self.offset = np.array([of[n] for n in self.names])
-        clip = contract.get("control.actions.joint_pos.clip", None)
+        clip = action_clip_pairs(contract, len(self.names))
         self.clip = np.asarray(clip, dtype=float) if clip else None
         kp = contract.get("control.actuators.kp")
         kd = contract.get("control.actuators.kd")

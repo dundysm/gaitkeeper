@@ -38,6 +38,49 @@ from ..tables import SDK_TABLES
 ENV = "legged_gym/envs/base/legged_robot.py (unitreerobotics/unitree_rl_gym@276801e)"
 
 
+class _Expr:
+    """A config value that is not a literal (a name, a call, a comprehension)."""
+
+    def __init__(self, src: str):
+        self.src = src
+
+
+_BINOPS = {
+    ast.Add: lambda a, b: a + b,
+    ast.Sub: lambda a, b: a - b,
+    ast.Mult: lambda a, b: a * b,
+    ast.Div: lambda a, b: a / b,
+    ast.FloorDiv: lambda a, b: a // b,
+    ast.Pow: lambda a, b: a**b,
+}
+
+
+def _value(node: ast.expr) -> Any:
+    """Literals plus constant arithmetic (``1/4``, ``-0.5*2``), evaluated without running code."""
+    try:
+        return ast.literal_eval(node)
+    except (ValueError, SyntaxError, TypeError):
+        pass
+    if isinstance(node, ast.BinOp) and type(node.op) in _BINOPS:
+        a, b = _value(node.left), _value(node.right)
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            return _BINOPS[type(node.op)](a, b)
+    elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        v = _value(node.operand)
+        if isinstance(v, (int, float)):
+            return -v if isinstance(node.op, ast.USub) else v
+    elif isinstance(node, (ast.List, ast.Tuple)):
+        vs = [_value(e) for e in node.elts]
+        if not any(isinstance(v, _Expr) for v in vs):
+            return vs if isinstance(node, ast.List) else tuple(vs)
+    elif isinstance(node, ast.Dict) and None not in node.keys:
+        ks = [_value(k) for k in node.keys]  # type: ignore[arg-type]
+        vs = [_value(v) for v in node.values]
+        if not any(isinstance(x, _Expr) for x in ks + vs):
+            return dict(zip(ks, vs))
+    return _Expr(ast.unparse(node))
+
+
 class _Cls:
     def __init__(self, name: str):
         self.name = name
@@ -50,6 +93,11 @@ class _Cls:
                 node = node.attrs[part]
             else:
                 return default
+        if isinstance(node, _Expr):
+            raise ValueError(
+                f"{path} = {node.src}: not a literal; the config is read without running it, "
+                "so this value cannot be known (write it as a number)"
+            )
         return node
 
 
@@ -84,10 +132,7 @@ def _classes(src: str, known: dict[str, _Cls]) -> dict[str, _Cls]:
             elif isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
                 t = stmt.targets[0]
                 if isinstance(t, ast.Name):
-                    try:
-                        c.attrs[t.id] = ast.literal_eval(stmt.value)
-                    except (ValueError, SyntaxError, TypeError):
-                        c.attrs[t.id] = None
+                    c.attrs[t.id] = _value(stmt.value)
         return c
 
     out = {}
@@ -161,21 +206,33 @@ def read_legged_gym(
     if unknown:
         raise ValueError(f"joints not in {table_name}: {unknown}")
 
-    def by_substring(key: str) -> dict[str, float]:
-        d = cfg.get(f"control.{key}") or {}
-        out = {}
+    def gains() -> tuple[dict[str, float], dict[str, float]]:
+        # legged_robot.py _init_buffers: every stiffness key that is a substring of the DOF
+        # name is applied in turn (no break), so the last match wins, and damping is read
+        # with that same key.
+        stiff = cfg.get("control.stiffness") or {}
+        damp = cfg.get("control.damping") or {}
+        kp, kd = {}, {}
         for nm in names:
-            hit = next((float(v) for k, v in d.items() if k in nm), None)
-            if hit is None:
-                raise ValueError(f"control.{key}: no entry matches {nm}")
-            out[nm] = hit
-        return out
+            hits = [k for k in stiff if k in nm]
+            if not hits:
+                raise ValueError(f"control.stiffness: no entry matches {nm}")
+            k = hits[-1]
+            if k not in damp:
+                raise ValueError(
+                    f"control.damping has no {k!r} (legged_gym reads it with that key)"
+                )
+            if len(hits) > 1:
+                findings.append(f"{nm}: stiffness keys {hits} all match; the last, {k!r}, applies")
+            kp[nm], kd[nm] = float(stiff[k]), float(damp[k])
+        return kp, kd
 
     defaults = cfg.get("init_state.default_joint_angles") or {}
     missing = [nm for nm in names if nm not in defaults]
     if missing:
         raise ValueError(f"init_state.default_joint_angles lacks {missing}")
     default = {nm: float(defaults[nm]) for nm in names}
+    kp_kd = gains()
     sim_dt = float(cfg.get("sim.dt"))
     dec = int(cfg.get("control.decimation"))
     sc = cfg.get("normalization.obs_scales")
@@ -321,8 +378,8 @@ def read_legged_gym(
     c.set(
         "control.actuators",
         {
-            "kp": by_substring("stiffness"),
-            "kd": by_substring("damping"),
+            "kp": kp_kd[0],
+            "kd": kp_kd[1],
             "kind": "explicit_pd",
             "pd_period": "sim_step",
             "integrator": None,

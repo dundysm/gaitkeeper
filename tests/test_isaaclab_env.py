@@ -55,3 +55,18 @@ def test_reader_refuses_an_mjlab_config(tmp_path):
     p.write_text("decimation: 4\nscene:\n  entities: {}\nobservations:\n  actor: {}\n")
     with pytest.raises(ValueError, match="mjlab"):
         read_isaaclab_env(p)
+
+
+def _history(tmp_path, group: str, term: str) -> int:
+    src = ENV.read_text()
+    src = src.replace("    history_length: 5\n", f"    history_length: {group}\n", 1)
+    src = src.replace("      history_length: 0\n", f"      history_length: {term}\n")
+    p = tmp_path / "env.yaml"
+    p.write_text(src)
+    c, _ = read_isaaclab_env(p)
+    return c.get("policy_io.observation_groups.policy")["history"]["length"]
+
+
+def test_group_history_overrides_term_history_as_isaac_lab_does(tmp_path):
+    assert _history(tmp_path, "5", "3") == 5
+    assert _history(tmp_path, "null", "3") == 3

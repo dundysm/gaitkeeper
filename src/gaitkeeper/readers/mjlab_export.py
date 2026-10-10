@@ -144,6 +144,13 @@ def _merge_list(
         )
 
 
+def _clip_list(clip: Any) -> list:
+    """One [low, high] for every joint, or one per joint, as deploy.yaml writes it."""
+    if all(isinstance(v, (int, float)) for v in clip):
+        return [float(v) for v in clip]
+    return [[float(a), float(b)] for a, b in clip]
+
+
 def read_mjlab_export(
     onnx_path: str | Path, yaml_path: str | Path | None
 ) -> tuple[Contract, list[ReaderFinding]]:
@@ -406,7 +413,7 @@ def read_mjlab_export(
     clip = ya.get("clip")
     c.set(
         "control.actions.joint_pos.clip",
-        None if clip is None else [float(v) for v in clip],
+        None if clip is None else _clip_list(clip),
         "file",
         "deploy.yaml clip",
     )

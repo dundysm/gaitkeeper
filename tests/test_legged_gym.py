@@ -66,3 +66,32 @@ def test_reader_refuses_an_unknown_layout(tmp_path):
     )
     with pytest.raises(ValueError, match="fits neither"):
         read_legged_gym(p, D / "base_config.py", urdf=D / "g1_12dof.urdf")
+
+
+def _variant(tmp_path, old, new):
+    src = (D / "g1_config.py").read_text()
+    assert old in src
+    p = tmp_path / "g1_config.py"
+    p.write_text(src.replace(old, new))
+    return read_legged_gym(
+        p, D / "base_config.py", urdf=D / "g1_12dof.urdf", env_py=D / "g1_env.py"
+    )
+
+
+def test_overlapping_gain_keys_follow_legged_gym_last_match(tmp_path):
+    # legged_robot.py applies every matching key in turn, so the last one wins, and
+    # damping is read with the same key.
+    c, findings = _variant(
+        tmp_path,
+        'stiffness = {"hip_yaw": 100, "hip_roll": 100, "hip_pitch": 100,',
+        'stiffness = {"hip": 50, "hip_yaw": 100, "hip_roll": 100, "hip_pitch": 100,',
+    )
+    assert c.get("control.actuators.kp")["left_hip_pitch_joint"] == 100.0
+    assert any("left_hip_pitch_joint" in f and "'hip_pitch'" in f for f in findings)
+
+
+def test_constant_arithmetic_is_read_and_other_expressions_are_refused(tmp_path):
+    c, _ = _variant(tmp_path, "action_scale = 0.25", "action_scale = 1 / 4")
+    assert c.get("control.actions.joint_pos")["scale"]["left_knee_joint"] == 0.25
+    with pytest.raises(ValueError, match="control.action_scale = SCALE"):
+        _variant(tmp_path, "action_scale = 0.25", "action_scale = SCALE")

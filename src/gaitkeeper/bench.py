@@ -118,6 +118,57 @@ class BenchReport:
         }
 
 
+def doctor_markdown(
+    name: str,
+    seconds: float,
+    gaps: list[str],
+    dead: list[str],
+    findings: list[str],
+    rows: list[tuple[str, dict[str, Any]]],
+    verdict: str,
+) -> str:
+    """The doctor report as markdown, in the sections the command prints.
+
+    BenchReport.markdown is the pattern: a heading, the evidence level, one table, then the
+    lists. Doctor has no single table, so each section is its own block, and the verdict
+    goes last so it reads as the answer the sections lead to.
+    """
+    md = [f"# gaitkeeper doctor: {name}", ""]
+    md.append(f"Tour of {seconds:.0f} s per seed. Evidence L1 (this runner and model).")
+
+    md += ["", "## Contract", ""]
+    if gaps:
+        md.append(f"{len(gaps)} field(s) no file states; results below assume defaults for them:")
+        md.append("")
+        md += [f"- `{g}`" for g in sorted(gaps)[:12]]
+        if len(gaps) > 12:
+            md.append(f"- ... and {len(gaps) - 12} more")
+    else:
+        md.append("Every field the runner needs comes from a file.")
+
+    md += ["", "## Command response", ""]
+    if dead or findings:
+        md += [f"- DEAD ZONE  {t}" for t in dead]
+        md += [f"- Finding    {f}" for f in findings]
+    else:
+        md.append("Tracks the commands it was swept with.")
+
+    md += ["", "## Waypoint tour", ""]
+    md += ["| Setting | Mean survival (s) | Complete | Pos err (cm) |", "|---|---|---|---|"]
+    for label, r in rows:
+        pos = "–" if math.isnan(r["pos_err_cm"]) else f"{r['pos_err_cm']:.0f}"
+        md.append(
+            f"| {label} | {r['mean_survival_s']:.1f} | {r['complete']}/{len(r['runs'])} | {pos} |"
+        )
+
+    md += ["", "## Summary", "", verdict, ""]
+    md.append(
+        "Evidence L1: this runner, this model, these assumptions. For a cause, record a golden "
+        "trace in the training simulator and run gaitkeeper verify (README: How it decides)."
+    )
+    return "\n".join(md) + "\n"
+
+
 def attribute(stages: dict[str, dict[str, Any]], seconds: float) -> list[str]:
     """Name the steps of the ladder that cost survival, largest first."""
     order = (["upstream"] if "upstream" in stages else []) + [k for k in STAGES if k in stages]

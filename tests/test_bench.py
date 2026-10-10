@@ -1,7 +1,7 @@
 import json
 import math
 
-from gaitkeeper.bench import BenchReport, attribute
+from gaitkeeper.bench import BenchReport, attribute, doctor_markdown
 
 
 def _st(surv, complete=0, n=2):
@@ -41,6 +41,69 @@ def test_report_gate_and_formats():
     json.dumps(rep.to_json())
     rep.stages["port"] = _st(20, 2)
     assert rep.gate()
+
+
+def test_doctor_markdown_has_each_section_and_the_verdict_last():
+    rows = [
+        (
+            "arms its own",
+            {
+                "mean_survival_s": 20.0,
+                "seconds": 20.0,
+                "complete": 2,
+                "runs": [1, 2],
+                "pos_err_cm": 12.0,
+            },
+        ),
+        (
+            "with punches",
+            {
+                "mean_survival_s": 5.0,
+                "seconds": 20.0,
+                "complete": 0,
+                "runs": [1, 2],
+                "pos_err_cm": math.nan,
+            },
+        ),
+    ]
+    md = doctor_markdown(
+        "p",
+        20.0,
+        ["policy_io.obs.history"],
+        ["vx +0.40 m/s"],
+        ["yaw stops responding"],
+        rows,
+        "It falls on the tour with nothing added.",
+    )
+    assert md.startswith("# gaitkeeper doctor: p") and "Evidence L1" in md
+    assert "- `policy_io.obs.history`" in md
+    assert "DEAD ZONE  vx +0.40 m/s" in md and "Finding    yaw stops responding" in md
+    assert "| Setting | Mean survival (s) | Complete | Pos err (cm) |" in md
+    assert "| with punches | 5.0 | 0/2 | – |" in md  # nan reads as a dash, as in bench
+    assert "## Summary" in md and "It falls on the tour with nothing added." in md
+    order = [
+        md.index(s)
+        for s in ["## Contract", "## Command response", "## Waypoint tour", "## Summary"]
+    ]
+    assert order == sorted(order)
+
+
+def test_doctor_markdown_says_so_when_there_is_nothing_to_report():
+    rows = [
+        (
+            "arms its own",
+            {
+                "mean_survival_s": 20.0,
+                "seconds": 20.0,
+                "complete": 3,
+                "runs": [1, 2, 3],
+                "pos_err_cm": 9.0,
+            },
+        )
+    ]
+    md = doctor_markdown("p", 20.0, [], [], [], rows, "It survives the tour.")
+    assert "Every field the runner needs comes from a file." in md
+    assert "Tracks the commands it was swept with." in md
 
 
 def test_bench_command_runs_the_ladder_on_the_g1(tmp_path, capsys):

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+* Ports that keep their own state are read: the adapter probe now recognizes an action
+  observed more than one step back (`last_action` with `lag`), joint velocity taken as the
+  difference of positions (`joint_vel_diff`), a gait clock whose period follows the command
+  speed and holds below a speed (`gait_phase_speed`, its period measured against speed as
+  piecewise-linear knots), constant padding repeated in every frame of a time-major history,
+  and a port that steers from the harness's task instead of passing its velocity command
+  (`policy_io.commands.base_velocity.shaping`, a waypoint follower whose gains, speed cap
+  and facing distances are measured). Verification feeds random waypoint tasks too.
+  teleop-walking-benchmark's zealot now reads, matching its adapter to 3e-6.
+* Stateful observation terms are written once as a step function, so a whole trace and the
+  closed loop build them the same way; the runner applies a contract's command shaping with
+  the tour's task (distance, yaw error and the waypoint in the body frame, as the
+  benchmark's harness passes it).
 * Benchmark port contracts follow the harness as of rhoyn/teleop-walking-benchmark@4ed23c2: legs
   and waist the policy does not own are held at its `kp()`/`kd()`, arms at the harness's
   armature gains unless the policy owns all 29 motors (the harness used armature gains for

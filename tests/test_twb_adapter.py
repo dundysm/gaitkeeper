@@ -158,3 +158,64 @@ def test_harness_holds_unowned_waist_at_the_policys_gains():
     assert held["waist_yaw_joint"]["pose"]["waist_yaw_joint"] == 0.0  # the harness stance
     arm = port.get("control.unlisted")["kp"]["left_elbow_joint"]
     assert 0 < arm < 100  # armature gains, not a policy gain
+
+
+TOY2 = Path(__file__).parent / "data" / "twb_toy2" / "policy.cpp"
+
+
+@needs_cxx
+def test_probe_reads_a_port_that_keeps_its_own_state():
+    """Lagged action, velocity by difference, a speed clock, padding in every frame of a
+    time-major history and a waypoint follower, all measured, not assumed."""
+    from gaitkeeper.readers.twb_adapter import Adapter
+    from gaitkeeper.readers.twb_probe import probe
+
+    r = probe(Adapter(TOY2))
+    ids = [t["id"] for t in r.terms]
+    assert ids == [
+        "last_action",
+        "velocity_commands",
+        "constant",
+        "joint_pos_rel",
+        "joint_vel_diff",
+        "projected_gravity",
+        "gait_phase_speed",
+        "base_ang_vel",
+        "constant",
+    ]
+    assert r.action_lag == 2
+    assert r.history == {
+        "length": 3,
+        "layout": "time_major",
+        "order": "oldest_first",
+        "init": "repeat_first",
+    }
+    assert r.clock["period_knots"] == [[0.15, 1.0], [0.2, 1.0], [0.825, 0.5], [2.0, 0.5]]
+    assert r.clock["stand_speed"] == 0.15 and r.clock["speed"] == "norm3"
+    assert r.clock["advance_first"] is False
+    assert r.shaping["params"] == {
+        "walk_p": 1.2,
+        "walk_speed": 0.6,
+        "yaw_p": 1.0,
+        "yaw_rate_abs": 0.5,
+        "vy_abs": 0.25,
+        "face_near_m": 0.5,
+        "face_far_m": 2.0,
+    }
+    assert r.action_scale == [0.4] * 12
+
+
+@needs_cxx
+def test_the_stateful_toy_contract_rebuilds_its_observation():
+    from assets import UMJ_G1, need
+
+    need(UMJ_G1)
+    from gaitkeeper.readers.twb_adapter import Adapter
+    from gaitkeeper.readers.twb_probe import read_twb_adapter, verify
+
+    r, cs, v = read_twb_adapter(TOY2, UMJ_G1)
+    assert v["ok"], v
+    # a wrong steering gain is caught on random tasks
+    bad = cs["port"].copy()
+    bad.data["policy_io"]["commands"]["base_velocity"]["shaping"]["params"]["walk_p"] = 1.5
+    assert verify(Adapter(TOY2), bad)["per_term"]["velocity_commands"] > 1e-3

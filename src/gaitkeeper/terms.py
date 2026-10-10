@@ -251,6 +251,123 @@ def constant(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
     return np.repeat(v[None], len(s.episode_step), axis=0)
 
 
+# -- stateful terms -------------------------------------------------------------------
+# A term whose value depends on earlier steps keeps a state from one step to the next. Each is
+# written once, as a step function over a single row; over a whole trace it is scanned row by
+# row (restarting at every reset), and the closed loop calls the same step, so the two cannot
+# differ.
+
+
+def _row(s: RawState, t: int) -> RawState:
+    return RawState(
+        root_quat=s.root_quat[t : t + 1],
+        ang_vel_body=s.ang_vel_body[t : t + 1],
+        joint_pos=s.joint_pos[t : t + 1],
+        joint_vel=s.joint_vel[t : t + 1],
+        joint_names=s.joint_names,
+        command=s.command[t : t + 1],
+        episode_step=s.episode_step[t : t + 1],
+        reset=s.reset[t : t + 1],
+        prev_action=s.prev_action[t : t + 1],
+        action=None if s.action is None else s.action[t : t + 1],
+        lin_vel_world=None if s.lin_vel_world is None else s.lin_vel_world[t : t + 1],
+    )
+
+
+def _action_lag_step(state: Any, s: RawState, p: dict[str, Any], ctx: TermContext):
+    """The raw action ``lag`` steps back (zeros before the episode has that many). ``lag`` 1
+    is ``prev_action``; a port that observes an older action keeps the ones in between."""
+    lag = int(p.get("lag", 1))
+    past = list(state or [])
+    out = past[-(lag - 1)] if lag > 1 and len(past) >= lag - 1 else np.zeros_like(s.prev_action[0])
+    if lag == 1:
+        out = s.prev_action[0]
+    past.append(s.prev_action[0].copy())
+    return np.asarray(out, dtype=np.float64), past[-max(lag - 1, 1) :]
+
+
+def _joint_vel_diff_step(state: Any, s: RawState, p: dict[str, Any], ctx: TermContext):
+    """Joint velocity as the change in measured position over one policy step, zero at the
+    first step after a reset (a port that never reads the simulator's velocity)."""
+    q = s.joint_pos[0, s.joint_index(ctx.joint_names)]
+    dt = float(p.get("dt", ctx.policy_dt))
+    out = np.zeros_like(q) if state is None else (q - state) / dt
+    if p.get("arithmetic") == "float32":
+        f = np.float32
+        out = (
+            np.zeros_like(q)
+            if state is None
+            else ((q.astype(f) - state.astype(f)) / f(dt)).astype(np.float64)
+        )
+    return out, q.copy()
+
+
+def speed_period(speed: float, knots: list[list[float]]) -> float:
+    """The gait period at a command speed: linear between knots, flat outside them."""
+    xs = [float(k[0]) for k in knots]
+    ys = [float(k[1]) for k in knots]
+    return float(np.interp(speed, xs, ys))
+
+
+def _command_speed(cmd: np.ndarray, how: str) -> float:
+    f = np.float32
+    c = np.asarray(cmd[:3], dtype=f)
+    if how == "norm3":
+        return float(np.sqrt(f(c[0] * c[0] + c[1] * c[1] + c[2] * c[2])))
+    if how == "planar":
+        return float(np.sqrt(f(c[0] * c[0] + c[1] * c[1])))
+    if how == "vx":
+        return float(abs(c[0]))
+    raise ValueError(f"gait_phase_speed: unknown speed {how!r}")
+
+
+def _gait_phase_speed_step(state: Any, s: RawState, p: dict[str, Any], ctx: TermContext):
+    """A clock whose rate follows the command: [sin, cos] of a phase that advances by
+    dt / period(speed) after each step while the command speed is at least ``stand_speed``
+    (not on the first step of an episode), in float32 as a port keeps it. ``period_knots``
+    gives the period against speed."""
+    f = np.float32
+    first = state is None
+    ph = f(0.0) if first else f(state)
+    a = f(2.0) * f(np.pi) * ph
+    out = np.array([np.sin(a), np.cos(a)], dtype=f).astype(np.float64)
+    speed = _command_speed(s.command[0], p.get("speed", "norm3"))
+    advance = (not first or p.get("advance_first", False)) and speed >= float(
+        p.get("stand_speed", 0.0)
+    )
+    if advance:
+        period = f(speed_period(speed, p["period_knots"]))
+        ph = f(np.fmod(f(ph + f(ctx.policy_dt) / period), f(1.0)))
+    return out, ph
+
+
+STATEFUL: dict[str, Callable[..., tuple[np.ndarray, Any]]] = {
+    "joint_vel_diff": _joint_vel_diff_step,
+    "gait_phase_speed": _gait_phase_speed_step,
+}
+
+
+def _stateful(term: dict[str, Any]):
+    p = term.get("params", {}) or {}
+    if term["id"] == "last_action" and int(p.get("lag", 1)) > 1:
+        return _action_lag_step
+    return STATEFUL.get(term["id"])
+
+
+def _scan(fn, s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    out, state = [], None
+    for t in range(len(s.episode_step)):
+        if t == 0 or bool(s.reset[t]):
+            state = None
+        v, state = fn(state, _row(s, t), p, ctx)
+        out.append(v)
+    return np.array(out)
+
+
+def _scan_term(fn):
+    return lambda s, p, ctx: _scan(fn, s, p, ctx)
+
+
 TERMS: dict[str, TermFn] = {
     "base_ang_vel": base_ang_vel,
     "base_lin_vel": base_lin_vel,
@@ -262,6 +379,8 @@ TERMS: dict[str, TermFn] = {
     "joint_vel_rel": joint_vel_rel,
     "last_action": last_action,
     "constant": constant,
+    "joint_vel_diff": _scan_term(_joint_vel_diff_step),
+    "gait_phase_speed": _scan_term(_gait_phase_speed_step),
 }
 
 
@@ -327,7 +446,9 @@ def term_values(
         if fn is None:
             raise KeyError(f"no term '{term['id']}' in the library")
         p = term.get("params", {}) or {}
-        out[term_key(term)] = apply_clip_scale(_select(fn(s, p, ctx), p), term, clip_then_scale)
+        st = _stateful(term)
+        raw = _scan(st, s, p, ctx) if st is not None else fn(s, p, ctx)
+        out[term_key(term)] = apply_clip_scale(_select(raw, p), term, clip_then_scale)
     return out
 
 
@@ -421,6 +542,7 @@ class ObservationBuilder:
         self.length = int(self.history.get("length", 1))
         self.ctx = context_from_contract(contract)
         self.buffers: dict[str, np.ndarray] = {}
+        self.states: dict[str, Any] = {}
 
     def step(
         self,
@@ -447,7 +569,15 @@ class ObservationBuilder:
             prev_action=(np.zeros_like(prev_action) if reset else np.asarray(prev_action))[None],
             lin_vel_world=None if lin_vel_world is None else np.asarray(lin_vel_world, float)[None],
         )
-        values = term_values(s, self.terms, self.ctx, self.clip_then_scale)
+        values = {}
+        for term in self.terms:
+            k, p = term_key(term), term.get("params", {}) or {}
+            st = _stateful(term)
+            if st is None:
+                values.update(term_values(s, [term], self.ctx, self.clip_then_scale))
+                continue
+            v, self.states[k] = st(None if reset else self.states.get(k), s, p, self.ctx)
+            values[k] = apply_clip_scale(_select(v[None], p), term, self.clip_then_scale)
         init = self.history.get("init", "repeat_first")
         for t in self.terms:
             x = values[term_key(t)][0]

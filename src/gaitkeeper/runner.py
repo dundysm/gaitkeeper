@@ -37,6 +37,7 @@ from typing import Any
 import mujoco
 import numpy as np
 
+from .commands import shape as shape_command
 from .contract import Contract, action_clip_pairs
 from .models import find_id, load_model
 from .terms import ObservationBuilder, quat_to_mat
@@ -620,6 +621,7 @@ class Runner:
         z0 = float(d.qpos[q0 + 2])
         p0 = d.qpos[q0 : q0 + 2].copy()
         builder = ObservationBuilder(self.contract)
+        shaping = self.contract.get("policy_io.commands.base_velocity.shaping", None)
         if self.policy is not None and hasattr(self.policy, "reset"):
             self.policy.reset()
         if cfg.policy_mode == "policy" and self.policy is None:
@@ -679,6 +681,8 @@ class Runner:
                         cmd = np.array(c_, dtype=float)
             if cfg.command_source is not None:
                 cmd = np.asarray(cfg.command_source(time, d.qpos[q0 : q0 + 7].copy()), float)
+            if shaping:
+                cmd = shape_command(cmd, getattr(cfg.command_source, "task", None), shaping)
             quat = d.qpos[q0 + 3 : q0 + 7].copy()
             w_b = d.qvel[v0 + 3 : v0 + 6].copy()
             qj = d.qpos[b.qadr].copy()

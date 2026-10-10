@@ -137,3 +137,107 @@ def test_raw_state_from_arrays_keeps_the_linear_velocity():
         np.zeros((2, 2)),
     )
     np.testing.assert_allclose(s.lin_vel_world[:, 0], [0.3, 0.4])
+
+
+def _contract_for(terms, history=None):
+    from gaitkeeper.contract import Contract
+
+    c = Contract({})
+    c.set("policy_io.joints.names", ["j0", "j1"], "file", "t")
+    c.set("control.default_joint_pos", {"j0": 0.1, "j1": -0.2}, "file", "t")
+    c.set("timing.policy_dt", 0.02, "file", "t")
+    c.set(
+        "policy_io.observation_groups.policy",
+        {"terms": terms, "history": history or {"length": 1}},
+        "file",
+        "t",
+    )
+    return c
+
+
+def _walk(T=40, seed=1):
+    rng = np.random.default_rng(seed)
+    q = np.cumsum(rng.normal(0, 0.01, (T, 2)), axis=0)
+    a = rng.normal(0, 0.5, (T, 2))
+    cmd = np.zeros((T, 3))
+    cmd[:, 0] = np.where(np.arange(T) % 9 < 6, rng.uniform(0.0, 1.2, T), 0.0)
+    reset = np.zeros(T, bool)
+    reset[25] = True
+    ep = np.zeros(T, int)
+    for t in range(1, T):
+        ep[t] = 0 if reset[t] else ep[t - 1] + 1
+    prev = np.zeros_like(a)
+    prev[1:] = a[:-1]
+    prev[reset] = 0.0
+    s = RawState(
+        np.tile([1.0, 0, 0, 0], (T, 1)),
+        np.zeros((T, 3)),
+        q,
+        np.zeros((T, 2)),
+        ["j0", "j1"],
+        cmd,
+        ep,
+        reset,
+        prev,
+        a,
+    )
+    return s, q, a, cmd, ep, reset
+
+
+STATEFUL_TERMS = [
+    {"id": "last_action", "source_name": "a2", "dim": 2, "params": {"lag": 2}},
+    {"id": "joint_vel_diff", "dim": 2},
+    {
+        "id": "gait_phase_speed",
+        "dim": 2,
+        "params": {"period_knots": [[0.1, 0.8], [0.74, 0.4]], "stand_speed": 0.1},
+    },
+]
+
+
+def test_stateful_terms_follow_their_definitions():
+    from gaitkeeper.terms import term_values
+
+    s, q, a, cmd, ep, reset = _walk()
+    v = term_values(s, STATEFUL_TERMS, CTX)
+    # the action two steps back, zeros until an episode has one
+    for t in range(len(ep)):
+        want = a[t - 2] if ep[t] >= 2 else np.zeros(2)
+        assert np.allclose(v["a2"][t], want)
+    # velocity by difference of positions, zero at an episode's first step
+    for t in range(len(ep)):
+        want = np.zeros(2) if ep[t] == 0 else (q[t] - q[t - 1]) / 0.02
+        assert np.allclose(v["joint_vel_diff"][t], want)
+    # the clock: no advance at an episode's first step or below stand speed; the period
+    # interpolates the knots
+    ph = 0.0
+    for t in range(len(ep)):
+        if ep[t] == 0:
+            ph = 0.0
+        assert np.allclose(
+            v["gait_phase_speed"][t], [np.sin(2 * np.pi * ph), np.cos(2 * np.pi * ph)], atol=1e-5
+        )
+        sp = abs(cmd[t, 0])
+        if ep[t] > 0 and sp >= 0.1:
+            ph = (ph + 0.02 / np.interp(sp, [0.1, 0.74], [0.8, 0.4])) % 1.0
+
+
+def test_builder_matches_the_whole_trace_for_stateful_terms():
+    from gaitkeeper.terms import ObservationBuilder, build_observation
+
+    s, q, a, cmd, ep, reset = _walk()
+    c = _contract_for(STATEFUL_TERMS, {"length": 3, "layout": "time_major"})
+    whole, _, _ = build_observation(s, c)
+    b = ObservationBuilder(c)
+    for t in range(len(ep)):
+        got = b.step(
+            [1.0, 0, 0, 0],
+            np.zeros(3),
+            q[t],
+            np.zeros(2),
+            ["j0", "j1"],
+            cmd[t],
+            int(ep[t]),
+            s.prev_action[t],
+        )
+        assert np.allclose(got, whole[t]), t

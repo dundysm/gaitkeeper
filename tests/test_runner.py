@@ -168,3 +168,36 @@ def test_unlisted_joints_follow_a_trajectory_when_given(url):
     assert qpos[0] == pytest.approx(0.0, abs=0.05) and qpos[-1] > 0.4
     with pytest.raises(ValueError, match="not unlisted"):
         r.run(RunConfig(seconds=0.1, policy_mode="zero", unlisted_trajectory={"nope": [[0, 0]]}))
+
+
+def test_waypoint_follow_shaping():
+    import math
+
+    import numpy as np
+
+    from gaitkeeper.commands import shape
+
+    sh = {
+        "kind": "waypoint_follow",
+        "params": {
+            "face_far_m": 1.5,
+            "face_near_m": 0.4,
+            "walk_speed": 0.5,
+            "walk_p": 1.5,
+            "yaw_p": 1.2,
+            "vy_abs": 0.3,
+            "yaw_rate_abs": 0.6,
+        },
+    }
+    cmd = np.array([0.4, 0.1, 0.2])
+    assert np.allclose(shape(cmd, (0, 0, 0, 0), sh), cmd)  # no waypoint: passed through
+    assert np.allclose(shape(cmd, None, None), cmd)
+    # straight ahead and near: walk_p * distance, aim at the yaw error
+    out = shape(cmd, (0.2, 0.1, 0.2, 0.0), sh)
+    assert np.allclose(out, [0.3, 0.0, 0.12])
+    # far and to the left: capped speed, gated by cos(bearing), facing the waypoint
+    b = 0.5
+    out = shape(cmd, (3.0, 0.0, 3 * math.cos(b), 3 * math.sin(b)), sh)
+    assert np.allclose(out, [0.5 * math.cos(b), 0.5 * math.cos(b) * math.sin(b), min(1.2 * b, 0.6)])
+    # position reached (planar command zero) and yaw reached: no motion
+    assert np.allclose(shape(np.zeros(3), (0.05, 0.02, 0.05, 0.0), sh), np.zeros(3))

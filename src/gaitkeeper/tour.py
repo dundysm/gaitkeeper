@@ -51,10 +51,14 @@ class WaypointTour:
     _yaw_ok: bool = field(default=False, repr=False)
     _last: tuple[float, float] | None = field(default=None, repr=False)
     _ends: list[tuple[float, float]] = field(default_factory=list, repr=False)
+    # The harness's task for the step just commanded (main.cpp h_task): distance to the
+    # waypoint, yaw error, and the waypoint in the body frame; zeros with no waypoint.
+    task: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
     def __call__(self, time: float, base: np.ndarray) -> np.ndarray:
         """``base`` is the free joint's qpos: position, then quaternion wxyz."""
         elapsed = time - self.start_s
+        self.task = (0.0, 0.0, 0.0, 0.0)
         if elapsed < 0:
             return np.zeros(3)
         x, y, yaw = float(base[0]), float(base[1]), _yaw(base[3:7])
@@ -80,6 +84,7 @@ class WaypointTour:
             abs(yaw_err) <= self.yaw_exit if self._yaw_ok else abs(yaw_err) < self.yaw_enter
         )
         c, s = math.cos(yaw), math.sin(yaw)
+        self.task = (dist, yaw_err, c * dx + s * dy, -s * dx + c * dy)
         cmd = np.zeros(3)
         if not self._pos_ok:
             cmd[0] = self.kp_pos * (c * dx + s * dy)

@@ -97,6 +97,8 @@ class ProbeResult:
         default_factory=list
     )  # per motor, the port's target at zero action
     findings: list[str] = field(default_factory=list)
+    action_lag: int = 1  # the observed action is this many steps old
+    shaping: dict[str, Any] | None = None  # the port's own command from the harness's task
 
     def to_json(self) -> dict[str, Any]:
         return dict(self.__dict__)
@@ -121,6 +123,7 @@ def _run(
     element: int = 0,
     delta: float = DELTA,
     cmd=BASE_CMD,
+    task=None,
 ) -> tuple[np.ndarray, np.ndarray]:
     a.reset()
     obs, tgt = [], []
@@ -141,6 +144,7 @@ def _run(
             x["cmd"],
             action=act,
             arm_pose=STANCE,
+            task=task,
         )
         obs.append(seen[0][: a.obs_dim])
         tgt.append(q_t)
@@ -199,10 +203,28 @@ def probe(a: Adapter) -> ProbeResult:
                 f"{WARM * POLICY_DT:g} s: the port ramps its actions in"
             )
 
-    # -- joint blocks at the newest frame (state: lag 0; action: lag 1)
+    # The action is observed one step later (last_action), or more when a port keeps an
+    # older one: the first lag any observation element responds to an action at.
+    alag = min(
+        (
+            next((j for j in range(1, len(resp[("action", e)])) if resp[("action", e)][j]), 99)
+            for e in range(n)
+        ),
+        default=1,
+    )
+    alag = 1 if alag == 99 else alag
+    if alag > 1:
+        findings.append(f"the port observes the action from {alag} steps back")
+
+    # -- joint blocks at the newest frame (state: lag 0; action: its lag)
     def newest(fam: str, e: int) -> dict[int, float]:
-        lag = 1 if fam == "action" else 0
+        lag = alag if fam == "action" else 0
         return resp[(fam, e)][lag]
+
+    def is_diff(m: int, i: int, g: float) -> bool:
+        """A position response that reverses the next step, in place: (q - q_prev) / dt."""
+        back = resp[("q", m)][1].get(i) if len(resp[("q", m)]) > 1 else None
+        return back is not None and abs(back + g) <= 1e-3 * abs(g)
 
     # A motor seen through joint_pos_rel also names its policy joint, for actions that move
     # nothing: the block start comes from the joints the action map does place.
@@ -212,7 +234,9 @@ def probe(a: Adapter) -> ProbeResult:
             e = k if fam == "action" else p2m[k]
             if e is None:
                 continue
-            for i in newest(fam, e):
+            for i, g in newest(fam, e).items():
+                if fam == "q" and is_diff(e, i, g):
+                    continue
                 votes[i - k] += 1
         return votes.most_common(1)[0][0] if votes else None
 
@@ -221,7 +245,9 @@ def probe(a: Adapter) -> ProbeResult:
         for m in range(NUM_MOTOR):
             if m in p2m:
                 continue
-            for i in newest("q", m):
+            for i, g in newest("q", m).items():
+                if is_diff(m, i, g):
+                    continue
                 k = i - starts["q"]
                 if 0 <= k < n and p2m[k] is None:
                     p2m[k], p2m_from[k] = m, "obs"
@@ -257,7 +283,7 @@ def probe(a: Adapter) -> ProbeResult:
                 "positions (a reference-motion or latent policy)"
             )
         hist_fam = "q"
-    lag0 = 1 if hist_fam == "action" else 0
+    lag0 = alag if hist_fam == "action" else 0
     i0 = next(iter(newest(hist_fam, he)))
     age_of: dict[int, int] = {}
     slots = []
@@ -283,7 +309,7 @@ def probe(a: Adapter) -> ProbeResult:
         history["init"] = "repeat_first" if len(first) > 1 else "zeros"
     # the age of every probed element: the first lag it responds at
     for (fam, _e), lags in resp.items():
-        l0 = 1 if fam == "action" else 0
+        l0 = alag if fam == "action" else 0
         for lag in range(l0, len(lags)):
             for i in lags[lag]:
                 age_of.setdefault(i, lag - l0)
@@ -311,6 +337,9 @@ def probe(a: Adapter) -> ProbeResult:
                 if m not in kq:
                     raise ProbeError(f"{a.name}: obs {i} follows motor {m}, which no action drives")
                 k = kq[m]
+                if fam == "q" and is_diff(m, i, g):
+                    put(i, ("joint_vel_diff", k, _round(g * POLICY_DT)))
+                    continue
                 put(i, (tid, k, _round(g)))
                 if fam == "q":
                     default_pose[k] = _round(STANCE[m] - base_obs[WARM][i] / g)
@@ -331,7 +360,9 @@ def probe(a: Adapter) -> ProbeResult:
                 put(i, ("last_action", k, _round(g)))
 
     # clock elements and their ages; constants
-    vary = [int(i) for i in varying if int(i) not in age_of]
+    # (a clock whose rate follows the command responds to it a step later, so it can carry
+    # an age; what matters is that nothing above describes it)
+    vary = [int(i) for i in varying if int(i) not in desc]
     newest_clock = _newest_copies(base_obs, vary, H)
     clock = None
     if newest_clock:
@@ -400,9 +431,24 @@ def probe(a: Adapter) -> ProbeResult:
                 )
             )
     if consts and H > 1:
-        raise ProbeError(
-            f"{a.name}: constant observation elements with a history: {sorted(consts)[:6]}"
-        )
+        # A constant slot repeats in every frame of a time-major history: keep the newest
+        # frame's copy as the term; the older copies must hold the same value.
+        if history["layout"] != "time_major":
+            raise ProbeError(
+                f"{a.name}: constant observation elements in a term-major history: "
+                f"{sorted(consts)[:6]}"
+            )
+        lo = (H - 1) * F if history["order"] == "oldest_first" else 0
+        newest_consts = {i: v for i, v in consts.items() if lo <= i < lo + F}
+        for i, v in consts.items():
+            j = lo + (i % F)
+            if j not in newest_consts or abs(newest_consts[j] - v) > 1e-6:
+                raise ProbeError(
+                    f"{a.name}: obs {i} is constant ({v:g}) but its newest copy {j} is not"
+                )
+        for i in set(consts) - set(newest_consts):
+            desc.pop(i, None)
+        consts = newest_consts
     if consts:
         findings.append(
             f"{len(consts)} observation element(s) are constants the port feeds: "
@@ -422,6 +468,7 @@ def probe(a: Adapter) -> ProbeResult:
 
     # -- terms: runs of the newest frame that follow one term
     full_dim = {"joint_pos_rel": n, "joint_vel_rel": n, "last_action": n, "gait_phase": 2}
+    full_dim |= {"joint_vel_diff": n, "gait_phase_speed": 2}
     full_dim |= {"gait_phase_legs": 4} | {tid: d for tid, d in SCALARS.values()}
     order = sorted(desc)
     terms: list[dict[str, Any]] = []
@@ -569,7 +616,67 @@ def probe(a: Adapter) -> ProbeResult:
         engines=a.engines,
         hold_target=[_round(float(x), 6) for x in base_tgt[WARM]],
         findings=findings,
+        action_lag=alag,
+        shaping=_shaping(a, desc, findings),
     )
+
+
+def _shaping(
+    a: Adapter, desc: dict[int, tuple[str, int, float]], findings: list[str]
+) -> dict[str, Any] | None:
+    """Whether the port turns the harness's task into its own command, and if so the
+    parameters of the waypoint follower it uses (commands.waypoint_follow), measured."""
+    el = {d_[1]: (i, d_[2]) for i, d_ in desc.items() if d_[0] == "velocity_commands"}
+    if sorted(el) != [0, 1, 2]:
+        return None
+
+    def seen(cmd, task) -> np.ndarray:
+        o, _ = _run(a, 3, cmd=cmd, task=np.r_[task, np.zeros(60)])
+        return np.array([o[2][el[e][0]] / el[e][1] for e in range(3)])
+
+    c0 = (0.4, 0.0, 0.1)
+    probes = [(0.2, 0.1, 0.2, 0.0), (3.0, 0.3, 2.0, 1.5), (0.6, -0.4, 0.3, -0.5)]
+    if all(np.allclose(seen(c0, tk), c0, atol=1e-6) for tk in probes):
+        return None
+    walk_p = seen(c0, (0.05, 0.0, 0.05, 0.0))[0] / 0.05
+    walk_speed = seen(c0, (50.0, 0.0, 50.0, 0.0))[0]
+    yaw_p = seen(c0, (0.01, 0.05, 0.01, 0.0))[2] / 0.05
+    yaw_rate_abs = abs(seen(c0, (0.01, 3.0, 0.01, 0.0))[2])
+    vy_abs = abs(seen(c0, (50.0, 0.0, 50.0 * math.cos(1.2), 50.0 * math.sin(1.2)))[1])
+    vy_free = walk_speed * math.cos(1.2) * math.sin(1.2)
+    if abs(vy_abs - vy_free) < 1e-6:  # did not bind: the port's command limit
+        vy_abs = float(a.limits.get("vy_abs", vy_abs))
+    # facing weight against distance: bearing b, yaw error 0 -> yaw rate yaw_p * w(d) * b
+    b = 0.2
+
+    def face_w(d: float) -> float:
+        wz = seen(c0, (d, 0.0, d * math.cos(b), d * math.sin(b)))[2]
+        return wz / (yaw_p * b)
+
+    lo, hi = 0.0, 10.0
+    for _ in range(30):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if face_w(mid) < 1e-6 else (lo, mid)
+    near = hi
+    lo, hi = near, 20.0
+    for _ in range(30):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if face_w(mid) < 1 - 1e-6 else (lo, mid)
+    far = hi
+    params = {
+        "walk_p": _round(walk_p),
+        "walk_speed": _round(walk_speed),
+        "yaw_p": _round(yaw_p),
+        "yaw_rate_abs": _round(yaw_rate_abs),
+        "vy_abs": _round(vy_abs),
+        "face_near_m": _round(near, 4),
+        "face_far_m": _round(far, 4),
+    }
+    findings.append(
+        "the port steers from the harness's task, not its velocity command: a waypoint "
+        "follower with " + ", ".join(f"{k} {v:g}" for k, v in params.items())
+    )
+    return {"kind": "waypoint_follow", "params": params}
 
 
 class _Arr(list):
@@ -676,12 +783,159 @@ def _newest_copies(obs: np.ndarray, idx: list[int], H: int) -> list[int]:
     return [i for i in idx if i not in older]
 
 
+def _fit_rate(x: np.ndarray, t: np.ndarray) -> tuple[float, float, np.ndarray]:
+    """Least-squares fit of sin(w t + phi) to each column of x: (residual, w, coef)."""
+    ref = int(np.argmax(x.var(axis=0)))
+    spec = np.abs(np.fft.rfft(x[:, ref] - x[:, ref].mean()))
+    k = int(np.argmax(spec[1:]) + 1)
+    w0 = 2 * math.pi * k / len(t)
+    best = None
+    for w in np.linspace(w0 * 0.8, w0 * 1.2, 4001):
+        B = np.stack([np.sin(w * t), np.cos(w * t)], axis=1)
+        coef, *_ = np.linalg.lstsq(B, x, rcond=None)
+        err = float(np.sum((B @ coef - x) ** 2))
+        if best is None or err < best[0]:
+            best = (err, float(w), coef)
+    return best  # type: ignore[return-value]
+
+
+def _speed_clock(
+    a: Adapter, idx: list[int], findings: list[str]
+) -> tuple[dict[str, Any], dict[int, tuple[str, int, float]]] | None:
+    """A [sin, cos] clock whose rate follows the command speed, gated below a speed (zealot).
+    Returns None when the rate does not depend on the speed."""
+    steps = 240
+    t = np.arange(steps, dtype=float)
+    fits = []
+    for vx in (0.4, 0.9):
+        o, _ = _run(a, steps, cmd=(vx, 0.0, 0.0))
+        fits.append((o, _fit_rate(o[2:, idx], t[2:])))
+    (o, (err, w, coef)), (_, (err2, w2, _)) = fits
+    if len(idx) != 2 or err > 1e-6 * steps or err2 > 1e-6 * steps:
+        return None
+    if abs(w2 - w) <= 1e-4 * w:
+        return None
+    amp = np.hypot(coef[0], coef[1])
+    phi = np.arctan2(coef[1], coef[0])
+    x = o[:, idx]
+    advance_first = bool(np.abs(x[1] - x[0]).max() > TOL)
+    lead = 0.0 if advance_first else w  # phase (t - 1) * delta when the first step holds
+    roles = []
+    for p_ in phi:
+        r = math.remainder(p_ + lead, 2 * math.pi)
+        if abs(r) < 2e-3:
+            roles.append(0)
+        elif abs(r - math.pi / 2) < 2e-3:
+            roles.append(1)
+        else:
+            raise ProbeError(
+                f"{a.name}: speed clock phases {np.round(phi, 3).tolist()} fit no [sin, cos]"
+            )
+    if sorted(roles) != [0, 1]:
+        raise ProbeError(f"{a.name}: speed clock elements are not one [sin, cos] pair")
+    i_s, i_c = (idx[roles.index(0)], idx[roles.index(1)])
+    a_s, a_c = (float(amp[roles.index(0)]), float(amp[roles.index(1)]))
+
+    def rate(cmd: tuple[float, float, float], span: int = 20) -> float:
+        """Phase advanced per step, averaged over ``span`` steps (unwrapped)."""
+        o_, _ = _run(a, 3 + span, cmd=cmd)
+        ang = np.unwrap(
+            [math.atan2(o_[k, i_s] / a_s, o_[k, i_c] / a_c) for k in range(2, 3 + span)]
+        )
+        return float((ang[-1] - ang[0]) / (2 * math.pi) / span)
+
+    # which speed: the full command norm, the planar norm or vx alone
+    r_x, r_w = rate((0.5, 0.0, 0.0)), rate((0.0, 0.0, 0.5))
+    r_xy = rate((0.3, 0.4, 0.0))
+    if abs(r_w - r_x) < 1e-7 and abs(r_xy - r_x) < 1e-7:
+        how = "norm3"
+    elif r_w < 1e-9 and abs(r_xy - r_x) < 1e-7:
+        how = "planar"
+    elif r_w < 1e-9:
+        how = "vx"
+    else:
+        raise ProbeError(f"{a.name}: the clock's rate follows no command speed gaitkeeper knows")
+    # the speed below which it holds
+    lo, hi = 0.0, 0.5
+    if rate((lo, 0.0, 0.0)) > 1e-9:
+        stand = 0.0
+    else:
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if rate((mid, 0.0, 0.0)) < 1e-9 else (lo, mid)
+        stand = _round(hi, 4)
+    # the period against speed, as knots of a piecewise-linear curve
+    speeds = np.round(np.arange(stand, 2.0 + 1e-9, 0.01), 6)
+    speeds[0] = stand
+    period = np.array([POLICY_DT / rate((float(s), 0.0, 0.0)) for s in speeds])
+    knots = _knots(speeds, period)
+    for s_, p_ in ((0.37, None), (1.13, None)):
+        got = POLICY_DT / rate((s_, 0.0, 0.0))
+        want = float(np.interp(s_, [k_[0] for k_ in knots], [k_[1] for k_ in knots]))
+        if abs(got - want) > 1e-3 * want:
+            raise ProbeError(f"{a.name}: the clock's period against speed is not piecewise linear")
+        del p_
+    clock = {
+        "id": "gait_phase_speed",
+        "period_knots": knots,
+        "stand_speed": stand,
+        "speed": how,
+        "advance_first": advance_first,
+    }
+    findings.append(
+        f"a gait clock whose period follows the command speed ({how}): "
+        + ", ".join(f"{p:g} s at {s:g}" for s, p in knots)
+        + f"; it holds below {stand:g}"
+    )
+    desc = {i_s: ("gait_phase_speed", 0, _round(a_s)), i_c: ("gait_phase_speed", 1, _round(a_c))}
+    return clock, desc
+
+
+def _knots(x: np.ndarray, y: np.ndarray, tol: float = 2e-4) -> list[list[float]]:
+    """Corners of a piecewise-linear curve sampled at x: lines fitted to the straight runs,
+    intersected, so a corner between samples is placed where the lines meet."""
+    keep = [0, len(x) - 1]
+
+    def rdp(i0: int, i1: int) -> None:
+        if i1 - i0 < 2:
+            return
+        line = y[i0] + (y[i1] - y[i0]) * (x[i0 + 1 : i1] - x[i0]) / (x[i1] - x[i0])
+        d = np.abs(y[i0 + 1 : i1] - line)
+        j = int(np.argmax(d))
+        if d[j] > tol:
+            keep.append(i0 + 1 + j)
+            rdp(i0, i0 + 1 + j)
+            rdp(i0 + 1 + j, i1)
+
+    rdp(0, len(x) - 1)
+    ks = sorted(set(keep))
+    # fit each straight run on its interior (a corner falls between samples, so the samples
+    # next to it may sit on either line), skip runs too short to be one, then meet neighbours
+    lines = []
+    for a_, b_ in zip(ks, ks[1:]):
+        lo, hi = (a_ + 1, b_ - 1) if b_ - a_ > 3 else (a_, b_)
+        if hi - lo < 2 and len(ks) > 2:
+            continue
+        lines.append(np.polyfit(x[lo : hi + 1], y[lo : hi + 1], 1))
+    pts = [[float(x[0]), float(np.polyval(lines[0], x[0]))]]
+    for l1, l2 in zip(lines, lines[1:]):
+        if abs(l1[0] - l2[0]) < 1e-9:
+            continue
+        xc = (l2[1] - l1[1]) / (l1[0] - l2[0])
+        pts.append([float(xc), float(np.polyval(l1, xc))])
+    pts.append([float(x[-1]), float(np.polyval(lines[-1], x[-1]))])
+    return [[round(p[0], 4), _round(p[1], 4)] for p in pts]
+
+
 def _clock(
     a: Adapter, idx: list[int], findings: list[str]
 ) -> tuple[dict[str, Any], dict[int, tuple[str, int, float]]]:
     """Fit sin(w t + phi_i) to each clock element and name it as an element of gait_phase
     ([sin, cos] of one phase) or gait_phase_legs ([sin a, sin b, cos a, cos b], b half a
     period on)."""
+    sc = _speed_clock(a, idx, findings)
+    if sc is not None:
+        return sc
     steps = 240
     o, _ = _run(a, steps)
     x = o[:, idx]
@@ -816,6 +1070,13 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
                 term["params"] = {"command_name": "base_velocity"}
             elif t["id"] == "last_action":
                 term["params"] = {"reset": "zeros"}
+                if r.action_lag > 1:
+                    term["params"]["lag"] = r.action_lag
+            elif t["id"] == "gait_phase_speed":
+                ck = r.clock or {}
+                term["params"] = {
+                    k: ck[k] for k in ("period_knots", "stand_speed", "speed", "advance_first")
+                }
             elif t["id"] == "gait_phase":
                 ck = r.clock or {}
                 term["params"] = {
@@ -855,9 +1116,12 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
                     "trained": None,
                     "heading": "off",
                 }
+                | ({"shaping": r.shaping} if r.shaping else {})
             },
             "file",
-            detail + ": limits()",
+            detail
+            + ": limits()"
+            + ("; the port's own steering from the task" if r.shaping else ""),
         )
         c.set(
             "policy_io.graph",
@@ -1013,6 +1277,7 @@ def verify(a: Adapter, port: Any, steps: int = 80, seed: int = 0) -> dict[str, A
     """Feed the adapter and gaitkeeper's observation builder the same random inputs (the
     port contract's view: held joints observed as it says) and compare what the policy
     would see. Returns the largest error overall and per term."""
+    from ..commands import shape as shape_command
     from ..terms import ObservationBuilder, quat_to_mat, term_slices
 
     rng = np.random.default_rng(seed)
@@ -1028,6 +1293,7 @@ def verify(a: Adapter, port: Any, steps: int = 80, seed: int = 0) -> dict[str, A
         for j in e["joints"]:
             obs_mode[j] = e.get("obs", "real")
     lim = port.get("policy_io.commands.base_velocity.limit")
+    shaping = port.get("policy_io.commands.base_velocity.shaping", None)
     builder = ObservationBuilder(port)
     group = port.get("policy_io.observation_groups.policy")
     cols = term_slices(group["terms"], group.get("history", {}))
@@ -1047,6 +1313,12 @@ def verify(a: Adapter, port: Any, steps: int = 80, seed: int = 0) -> dict[str, A
         cmd = np.array([rng.uniform(*lim["vx"]), rng.uniform(*lim["vy"]), rng.uniform(*lim["wz"])])
         if t % 7 == 3:
             cmd[:] = 0.0  # a standing step, for gated clocks
+        if t % 11 == 5:
+            cmd[:2] = 0.0  # position reached, heading not
+        # the harness's task: no waypoint on some steps, else a random one
+        d_ = 0.0 if t % 5 == 0 else float(rng.uniform(0.0, 3.0))
+        b_ = float(rng.uniform(-math.pi, math.pi))
+        task = np.array([d_, rng.uniform(-math.pi, math.pi), d_ * math.cos(b_), d_ * math.sin(b_)])
         action = np.clip(rng.normal(0, 0.5, n), -1.0, 1.0)
         _, seen = a.step(
             q,
@@ -1058,6 +1330,7 @@ def verify(a: Adapter, port: Any, steps: int = 80, seed: int = 0) -> dict[str, A
             action=action,
             arm_pose=STANCE,
             quat=quat,
+            task=np.r_[task, np.zeros(60)],
         )
         qj, vj = q[p2m].copy(), dq[p2m].copy()
         for k, nm in enumerate(names):
@@ -1066,7 +1339,8 @@ def verify(a: Adapter, port: Any, steps: int = 80, seed: int = 0) -> dict[str, A
                 qj[k], vj[k] = off[k] + sc[k] * prev[k], 0.0
             elif mode == "default":
                 qj[k], vj[k] = default[k], 0.0
-        mine = builder.step(quat, gyro, qj, vj, names, cmd, t, prev, v_w)
+        seen_cmd = shape_command(cmd, task, shaping)
+        mine = builder.step(quat, gyro, qj, vj, names, seen_cmd, t, prev, v_w)
         worst = np.maximum(worst, np.abs(mine - seen[0][: a.obs_dim]))
         prev = action
     per_term = {k: float(worst[c].max()) for k, c in cols.items()}

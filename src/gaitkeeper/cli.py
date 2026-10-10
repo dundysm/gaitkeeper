@@ -14,6 +14,7 @@ import textwrap
 from pathlib import Path
 from typing import NoReturn
 
+from .bench import FINDING_WIDTH
 from .contract import Contract
 from .env import env
 from .trace import Trace
@@ -524,25 +525,22 @@ def cmd_adapter(args: argparse.Namespace) -> int:
 
 
 def _wrap(sentence: str) -> list[str]:
-    """The sentences doctor prints, wrapped, so no line runs off a narrow terminal."""
-    from .bench import FINDING_WIDTH
-
+    """The sentences doctor prints, wrapped the width it always wrapped at."""
     return textwrap.wrap(sentence, width=FINDING_WIDTH) or [""]
 
 
 def _report_source(args: argparse.Namespace) -> str:
-    """Name the file the report is about, the way the run was asked for it.
+    """Name the file the report is about, by file name only.
 
-    A report is usually attached to a pull request, where the file is what identifies it;
-    the bare policy name reads as the command rather than the subject. The arguments are
-    tried in the order doctor resolves them, and ``--onnx`` names itself so the two paths
-    cannot be confused in a report.
+    These reports get pasted into public issues, so the directory the policy happens to
+    sit in is nobody's business and is not what identifies the run; the file name is.
+    ``--onnx`` names itself so the two paths cannot be confused in a report.
     """
-    if getattr(args, "policy", None):
-        return str(args.policy)
-    if getattr(args, "onnx", None):
-        return f"{args.onnx} (onnx)"
-    return "policy"
+    path = getattr(args, "policy", None) or getattr(args, "onnx", None)
+    if not path:
+        return "policy"
+    name = Path(path).name
+    return f"{name} (onnx)" if getattr(args, "onnx", None) else name
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:

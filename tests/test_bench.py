@@ -132,14 +132,32 @@ def test_doctor_markdown_names_the_policy_file_and_wraps_the_terminal():
         "It falls on the tour with nothing added.",
         source="policies/my_policy/policy.yaml",
     )
-    # A report is attached to a PR, so the heading and the policy line name the file.
+    # A report is attached to a PR, so the heading and the policy line name the file --
+    # the file name, not the directory it happens to sit in.
     assert md.startswith("# gaitkeeper doctor: my_policy")
-    assert "Policy: `policies/my_policy/policy.yaml`" in md
+    assert "Policy: `policy.yaml`" in md
+    assert "policies/" not in md, "the report must not carry the local directory"
 
     sentence = step_losses(rows)[0][1]
     assert sentence == "With punches costs it 15 s (20.0 to 5.0 s)."
     # Wrapped for a terminal, every line fits the width the project reports to.
     assert all(len(line) <= FINDING_WIDTH for line in textwrap.wrap(sentence, FINDING_WIDTH))
+
+
+def test_report_source_is_the_file_name_not_the_path():
+    """Reports get pasted into public issues; the path is nobody's business."""
+    import argparse
+
+    from gaitkeeper.cli import _report_source
+
+    assert _report_source(argparse.Namespace(policy="a/b/policy.yaml", onnx=None)) == "policy.yaml"
+    assert _report_source(argparse.Namespace(policy="C:\\x\\p.yaml", onnx=None)) == "p.yaml"
+    # --onnx still names itself, so the two paths cannot be confused.
+    assert (
+        _report_source(argparse.Namespace(policy=None, onnx="m/onnx/model.onnx"))
+        == "model.onnx (onnx)"
+    )
+    assert _report_source(argparse.Namespace(policy=None, onnx=None)) == "policy"
 
 
 def test_step_losses_ignores_a_stage_under_the_notable_threshold():

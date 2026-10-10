@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .tour import BENCH_ARMS, TourOptions, run_tour
@@ -41,9 +42,9 @@ STAGE_TEXT = {
 NOTABLE_S = 5.0
 
 # Findings are one sentence, but the terminal lines are short and the "costs it" notes
-# are built by joining two rows. Wrapped to a fixed column so a report or a terminal pasted
-# into a PR stays inside the 80-column markdown the rest of the project keeps to.
-FINDING_WIDTH = 72
+# are built by joining two rows. 88 is the width doctor's output already wrapped at, so the
+# wrap restores the printed shape rather than inventing a narrower one.
+FINDING_WIDTH = 88
 
 
 @dataclass
@@ -167,7 +168,11 @@ def doctor_markdown(
     """
     md = [f"# gaitkeeper doctor: {name}", ""]
     if source:
-        md.append(f"Policy: `{source}`")
+        # The file name only: these reports get pasted into public issues, so the
+        # directory a policy happens to sit in is nobody's business and is not what
+        # identifies the run. Reduced here as well as in the CLI so any caller gets
+        # the same guarantee.
+        md.append(f"Policy: `{Path(source).name}`")
         md.append("")
     md.append(f"Tour of {seconds:.0f} s per seed. Evidence L1 (this runner and model).")
 

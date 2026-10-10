@@ -74,7 +74,7 @@ def test_task_on_the_issue_145_setup(tmp_path, capsys):
     assert "Finding  TASK_FAILURE_OBSERVED / BEHAVIORAL_LIMITATION  (evidence L1, exit 5)" in text
 
 
-def test_set_states_a_contract_field_as_user_given(tmp_path):
+def test_set_states_a_contract_field_as_user_given(tmp_path, capsys):
     from argparse import Namespace
 
     import pytest
@@ -88,5 +88,31 @@ def test_set_states_a_contract_field_as_user_given(tmp_path):
     c = _contract(Namespace(contract=str(p), preset=[], set=sets))
     assert c.get("timing.policy_dt") == 0.02 and c.prov("timing.policy_dt").source == "user"
     assert c.get("model.armature") == {"a": 0.01}
-    with pytest.raises(SystemExit, match="top level"):
+    with pytest.raises(SystemExit) as e:
         _contract(Namespace(contract=str(p), preset=[], set=["x.y=1"]))
+    assert e.value.code == 2 and "top level" in capsys.readouterr().err
+
+
+def test_wrong_kind_of_input_exits_2_naming_the_flag(tmp_path, capsys):
+    from gaitkeeper.cli import main
+
+    bad = tmp_path / "policy.onnx"
+    bad.write_text("a: 1\n")
+    scene = tmp_path / "scene.xml"
+    scene.write_text("a: 1\n")
+    assert main(["doctor", "--onnx", str(bad), "--mjcf", str(scene)]) == 2
+    assert "--onnx" in capsys.readouterr().err
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_bytes(b"\x8c\x00\xff")
+    assert main(["inspect", "--config", str(cfg)]) == 2
+    assert "--config" in capsys.readouterr().err
+
+
+def test_missing_config_is_a_usage_error(tmp_path, capsys):
+    import pytest
+
+    from gaitkeeper.cli import main
+
+    with pytest.raises(SystemExit) as e:
+        main(["inspect"])
+    assert e.value.code == 2 and "--config" in capsys.readouterr().err

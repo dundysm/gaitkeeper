@@ -2,9 +2,9 @@
 (``gaitkeeper fetch all``; ``$GAITKEEPER_DATA`` or ``~/.cache/gaitkeeper``). Each test
 skips when its files are absent, so the unit suite runs anywhere.
 
-Recorded golden traces come from the recorder under ``runs/``
-(``$GAITKEEPER_RUNS``), or from ``gaitkeeper fetch golden`` into the fixture
-directory once they are published; a trace under ``runs/`` wins."""
+Recorded golden traces are not downloadable yet (publishing waits on a license; see
+STATUS.md). They come from the recorder (tools/record_mjlab.py) under ``runs/``
+(``$GAITKEEPER_RUNS``)."""
 
 from pathlib import Path
 
@@ -23,6 +23,8 @@ MJLAB_ONNX = UMJLAB_G1 / "policy.onnx"  # the export the mjlab golden traces wer
 
 def need(*paths: Path) -> None:
     missing = [str(p) for p in paths if not p.exists()]
+    if any("golden" in m for m in missing):
+        pytest.skip(f"missing {missing}; golden traces come from tools/record_mjlab.py")
     if missing:
         pytest.skip(f"missing {missing}; `gaitkeeper fetch all` downloads the fixtures")
 

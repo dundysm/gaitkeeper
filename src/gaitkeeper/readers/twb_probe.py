@@ -979,9 +979,9 @@ def read_twb_adapter(policy_cpp: str | Path, mjcf: str | Path, cls: str = "Polic
     for c in cs.values():
         note = c.get("source.note")
         c.data["source"]["note"] = note + (
-            "; port observation verified against the adapter on random inputs"
+            "; port observation matches the adapter's on random inputs"
             if v["ok"]
-            else f"; UNVERIFIED: observation differs from the adapter's by up to {v['max_abs']:.3g}"
+            else f"; observation DIFFERS from the adapter's by up to {v['max_abs']:.3g}"
         )
     return r, cs, v
 

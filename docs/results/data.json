@@ -5,7 +5,7 @@
  "tour_s": 90,
  "seeds": 3,
  "pearson": 0.936,
- "spearman": 0.888,
+ "spearman": 0.893,
  "n_corr": 16,
  "policies": [
   {
@@ -438,7 +438,7 @@
    "read": "unverified",
    "benchmark_mujoco": 5.8,
    "benchmark_physx": 6.37,
-   "reason": "Reads, but its gait clock resets whenever the robot stands, which gaitkeeper does not model, so the observation does not verify.",
+   "reason": "Reads, but its gait clock resets whenever the robot stands, which gaitkeeper does not model, so its observation does not match the adapter's.",
    "probe": {
     "obs": 100,
     "actions": 29,
@@ -1282,7 +1282,7 @@
    "read": "verified",
    "benchmark_mujoco": 7.31,
    "benchmark_physx": 7.88,
-   "reason": "Reads and verifies; its weights are not published, so it is not benched.",
+   "reason": "Reads, and its observation matches the adapter's; its weights are not published, so it is not benched.",
    "probe": {
     "obs": 99,
     "actions": 29,

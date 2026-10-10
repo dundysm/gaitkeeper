@@ -21,8 +21,9 @@ benchmark results are in the [G1 Port Audit](https://dundysm.github.io/gaitkeepe
 * **Recorders** for mjlab velocity envs (CPU) and unitree_rl_lab's G1 velocity task in
   Isaac Lab (GPU, run once).
 
-Tests: 211 pass in about 2.5 minutes on 8 cores with the fixtures and the mjlab golden
-traces present; without them, each skip names the missing files.
+Tests: without the downloaded fixtures (as CI runs) the suite takes about 15 s; with them,
+2 to 5 minutes depending on cores. Each skip names the files it is missing; the golden-trace
+tests need traces recorded with `tools/record_mjlab.py`.
 
 ## Measured
 
@@ -44,9 +45,14 @@ traces present; without them, each skip names the missing files.
   behavior; the training config's arm damping at 4960b84 (1.0 against 10) makes 14 of 16
   envs fall, so the policy was trained with gains like deploy.yaml's. E4 recovers an
   ankle armature change on PhysX (detection only).
-* **teleop-walking-benchmark (L1).** 16 of 34 ports read and verified from their adapters;
-  survival on the full benchmark tracks the benchmark's own MuJoCo numbers (Pearson 0.94,
-  Spearman 0.89) with no hand-written contract. Per-policy verdicts, with the authors'
+* **teleop-walking-benchmark (L1).** 16 of 34 ports read, with the observation gaitkeeper
+  rebuilds matching the adapter's on random inputs (a check of the reading, not of the
+  policy). 16 are benched: 15 of those (sunny has no published weights) and holosoma, which
+  reads but whose stand-reset clock does not match. Survival on the full benchmark tracks
+  the benchmark's own MuJoCo numbers (Pearson 0.94, Spearman 0.89, n = 16) with the port
+  contracts read from the adapters, none written by hand. Three long-surviving ports carry
+  much of the Pearson: over the 13 that last under 15 s it is 0.67; against the benchmark's
+  PhysX numbers it is 0.81. Per-policy verdicts, with the authors'
   config as a first stage for eight of them, are in the
   [G1 Port Audit](https://dundysm.github.io/gaitkeeper/results/).
 
@@ -60,7 +66,7 @@ traces present; without them, each skip names the missing files.
   source is printed as `CONTROLLER_ASSUMED`.
 * The adapter reader refuses what it cannot rebuild exactly: reference-motion and latent
   policies, observations of joints the policy does not drive, and clocks that reset or
-  warp. The audit page lists the 18 adapters it refuses and why.
+  warp. The audit page lists the 17 adapters it refuses and why.
 * The two Unitree policy repositories have no LICENSE file at the pinned commits.
   `gaitkeeper fetch` says so and downloads them for local use; they are not
   redistributed. unitree_mujoco and MuJoCo Menagerie are BSD-3-Clause.

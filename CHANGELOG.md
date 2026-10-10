@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+Fixes from an external audit of 0.5.0.
+
+* Boundary C applies the contract's processed-target clip, as the runner does. A correct
+  trace from a deploy that clips its targets (Unitree deploy.yaml, Isaac Lab, legged_gym,
+  adapters) no longer fails C with a false CONTRACT verdict.
+* legged_gym reader: when several stiffness keys match a joint, the last one applies and
+  damping is read with it, as legged_robot.py does (it took the first). Constant
+  arithmetic such as `1/4` is read; any other expression is refused with the field named
+  (it became None).
+* Isaac Lab reader: a group `history_length` overrides each term's, as the
+  ObservationManager does (the term's won).
+* mjlab export reader: a per-joint action clip in deploy.yaml is read (it raised), and a
+  single `[low, high]` clip no longer crashes the runner.
+* Adapter builds compile to a temporary file and move into place, so parallel runs never
+  load a partly written library.
+* Input files are checked before any work: an ONNX file that does not load, an MJCF MuJoCo
+  cannot parse, or a binary file given as `--config` exits 2 with the flag named. Every
+  command-line mistake now exits 2 (some exited 1, the CONTRACT code).
+* `--config` passes `--onnx` to the deploy.yaml and unitree_rl_gym readers, and a new
+  `--joint-order deploy.yaml` gives an Isaac Lab env.yaml its joint order.
+* `doctor` names the presets that fill its unknown fields and says how long the sweep takes;
+  every option has help text; `adapter` reports MATCHES ADAPTER / DIFFERS FROM ADAPTER
+  rather than "verified", which the README reserves for L2.
+* `fetch` no longer suggests `fetch golden`, which does not exist yet.
+* Docs: corrected the arm-walk survival (about 11 s, not 15), the number of refused
+  adapters (17), test timings, and run times; the results page computes its correlations
+  from the published values and states how much three long-surviving ports carry.
+
 ## 0.5.0
 
 * `gaitkeeper doctor --onnx policy.onnx --config <config> --mjcf scene.xml`: one command for
@@ -11,8 +41,9 @@
 
 ## 0.4.0
 
-* A reader for the env.yaml Isaac Lab writes with a training run (`--isaaclab-env
-  params/env.yaml [--joint-order deploy.yaml]`): regex patterns over joint names resolved
+* A reader for the env.yaml Isaac Lab writes with a training run (used by `bench
+  --upstream`; from 0.5.0 also `--config env.yaml`, and from 0.5.1 `--joint-order
+  deploy.yaml`): regex patterns over joint names resolved
   as Isaac Lab does (default pose, actuator groups with gains, armature and limits, action
   scale), observation terms with their scales, clips and history, training noise noted,
   the command start and limit ranges and which axes a curriculum widens. The joint order,
@@ -108,7 +139,7 @@ First release on PyPI.
   when the source model was recorded.
 * The mjlab recorder (CPU), a closed-loop MuJoCo runner with four controller backends,
   `check`, `envelope`, `task`, `infer`, `residual`, `deviation`, and `demo`.
-* `fetch` for pinned upstream fixtures, and for golden traces from a Hugging Face dataset.
+* `fetch` for pinned upstream fixtures (golden traces are not published yet; see STATUS).
 * `tools/blind.py` and docs/BLIND_TEST.md for scoring harness logs with sealed labels.
 
 Calibrated source engines: mjlab 1.2.0 on mujoco_warp 3.5.0 only. Nothing has been recorded

@@ -14,6 +14,8 @@ import html
 import json
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "docs" / "results" / "data.json"
 
@@ -189,8 +191,50 @@ def chip(cause: str) -> str:
     return f'<span class="chip" style="color: var(--c-{cause})">{e(label)}</span>'
 
 
+def _ranks(x: np.ndarray) -> np.ndarray:
+    order = np.argsort(x, kind="stable")
+    r = np.empty(len(x))
+    r[order] = np.arange(len(x), dtype=float)
+    for v in np.unique(x):  # ties share their mean rank
+        m = x == v
+        r[m] = r[m].mean()
+    return r
+
+
+def agreement(d: dict) -> dict:
+    """Pearson and Spearman of port survival against the benchmark's numbers, computed from
+    the published per-policy values so anyone can reproduce them from data.json."""
+    rows = [
+        (p["stages"]["port"]["mean_survival_s"], p["benchmark_mujoco"], p.get("benchmark_physx"))
+        for p in d["policies"]
+        if p.get("stages") and "port" in p["stages"] and p.get("benchmark_mujoco") is not None
+    ]
+    x, y = np.array([r[0] for r in rows]), np.array([r[1] for r in rows])
+    out = {
+        "n": len(rows),
+        "pearson": float(np.corrcoef(x, y)[0, 1]),
+        "spearman": float(np.corrcoef(_ranks(x), _ranks(y))[0, 1]),
+    }
+    short = x < 15.0
+    out["n_short"] = int(short.sum())
+    out["pearson_short"] = float(np.corrcoef(x[short], y[short])[0, 1])
+    px = [(a, c) for a, _, c in rows if c is not None]
+    if len(px) > 2:
+        a, c = np.array([v[0] for v in px]), np.array([v[1] for v in px])
+        out["n_physx"] = len(px)
+        out["pearson_physx"] = float(np.corrcoef(a, c)[0, 1])
+    return out
+
+
 def page(d: dict) -> tuple[str, str]:
     pols = d["policies"]
+    ag = agreement(d)
+    physx_text = (
+        f" Against the benchmark&#8217;s PhysX runs ({ag['n_physx']} policies) it is "
+        f"{ag['pearson_physx']:.2f}."
+        if "pearson_physx" in ag
+        else ""
+    )
     total = float(d["tour_s"])
     benched = [p for p in pols if p.get("stages")]
     order = ["port", "arms", "walk", "punch", "policy", "unclear"]
@@ -259,7 +303,7 @@ def page(d: dict) -> tuple[str, str]:
             else ""
         )
         + (
-            f' <a href="{REPO}/issues/{ISSUES[p["name"]]}">Help wanted: issue #{ISSUES[p["name"]]}</a>'
+            f' <a href="{REPO}/issues/{ISSUES[p["name"]]}">Open issue #{ISSUES[p["name"]]}</a>'
             if p["name"] in ISSUES
             else ""
         )
@@ -292,11 +336,11 @@ def page(d: dict) -> tuple[str, str]:
     <div class="panel">
       <span class="eyebrow">Agreement with the benchmark</span>
       <div style="display:flex; gap: 22px; align-items: baseline; flex-wrap: wrap">
-        <span><span class="big num">{d["pearson"]:.2f}</span> <span class="eyebrow">Pearson</span></span>
-        <span><span class="big num">{d["spearman"]:.2f}</span> <span class="eyebrow">Spearman</span></span>
+        <span><span class="big num">{ag["pearson"]:.2f}</span> <span class="eyebrow">Pearson</span></span>
+        <span><span class="big num">{ag["spearman"]:.2f}</span> <span class="eyebrow">Spearman</span></span>
       </div>
       {scatter(pols, total)}
-      <p style="font-size: .84rem; color: var(--muted)">{d["n_corr"]} policies. Survival of the port under the full benchmark here, against the benchmark's own MuJoCo runs, with no contract written by hand.</p>
+      <p style="font-size: .84rem; color: var(--muted)">{ag["n"]} policies. Survival of the port under the full benchmark here, against the benchmark's own MuJoCo runs; the port contracts are read from the adapters, none written by hand. Three long-surviving ports carry much of the Pearson: over the {ag["n_short"]} that last under 15 s it is {ag["pearson_short"]:.2f}.{physx_text}</p>
     </div>
   </div>
 </section>
@@ -348,14 +392,14 @@ gaitkeeper bench --adapter twb/policies/rl_gym/policy.cpp --onnx twb/policies/rl
 
 <section>
   <h2>Run it on your own policy</h2>
-  <p>The same checks, pointed at any G1 policy and config, in about a minute on a laptop:</p>
+  <p>The same checks on a G1 policy whose config gaitkeeper reads, in one to two and a half minutes on a laptop:</p>
 <pre>gaitkeeper doctor --onnx policy.onnx --config &lt;your config&gt; --mjcf scene.xml</pre>
   <p style="color: var(--muted); font-size: .92rem">The config is read by content: an Isaac Lab env.yaml, a Unitree deploy.yaml, a unitree_rl_gym or legged_gym config, or a contract. Doctor reports the contract fields no file states, the commands the policy ignores, and survival on the tour with the arms its own, moved at random and punched.</p>
 </section>
 
 <section>
   <h2>Help</h2>
-  <p>Ports marked <i>help wanted</i> above are refused for one missing piece each, and each has an open issue. A verdict that looks wrong, a config gaitkeeper cannot read, or harness logs for a blind test are just as useful. <a href="https://github.com/dundysm/gaitkeeper/contribute">Good first issues</a> · <a href="https://github.com/dundysm/gaitkeeper/blob/main/CONTRIBUTING.md">Contributing</a> · <a href="https://github.com/dundysm/gaitkeeper/discussions">Discussions</a></p>
+  <p>Ports with an open issue above are refused for one missing piece each. A verdict that looks wrong, a config gaitkeeper cannot read, or harness logs for a blind test are just as useful. <a href="https://github.com/dundysm/gaitkeeper/contribute">Good first issues</a> · <a href="https://github.com/dundysm/gaitkeeper/blob/main/CONTRIBUTING.md">Contributing</a> · <a href="https://github.com/dundysm/gaitkeeper/discussions">Discussions</a></p>
 </section>
 </div>
 """,
@@ -476,10 +520,10 @@ def readme_svg(d: dict) -> str:
     t = sh / total
     o.append(f'<text x="{sx - 30}" y="30" class="h">Agreement with the benchmark</text>')
     o.append(
-        f'<text x="{sx - 30}" y="68" class="big">{d["pearson"]:.2f}</text><text x="{sx + 34}" y="68" class="lab">Pearson</text>'
+        f'<text x="{sx - 30}" y="68" class="big">{agreement(d)["pearson"]:.2f}</text><text x="{sx + 34}" y="68" class="lab">Pearson</text>'
     )
     o.append(
-        f'<text x="{sx + 104}" y="68" class="big">{d["spearman"]:.2f}</text><text x="{sx + 168}" y="68" class="lab">Spearman</text>'
+        f'<text x="{sx + 104}" y="68" class="big">{agreement(d)["spearman"]:.2f}</text><text x="{sx + 168}" y="68" class="lab">Spearman</text>'
     )
     o.append(
         f'<line class="ax" x1="{sx}" y1="{sy + sh}" x2="{sx + sw}" y2="{sy + sh}"/><line class="ax" x1="{sx}" y1="{sy}" x2="{sx}" y2="{sy + sh}"/>'

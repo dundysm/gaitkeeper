@@ -11,6 +11,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 from .contract import Contract
 from .env import env
@@ -18,7 +19,10 @@ from .trace import Trace
 
 
 def _read_any(
-    path: str, robot: str = "unitree_g1_29dof", joint_order: list[str] | None = None
+    path: str,
+    robot: str = "unitree_g1_29dof",
+    joint_order: list[str] | str | None = None,
+    onnx: str | None = None,
 ) -> Contract:
     """A contract YAML, a Unitree deploy.yaml, a unitree_rl_gym deploy config or an Isaac Lab
     env.yaml, by content. ``joint_order`` is the policy's, for an env.yaml (which lacks it)."""
@@ -28,7 +32,7 @@ def _read_any(
     if "scene" in d and "observations" in d and "decimation" in d:
         from .readers.isaaclab_env import read_isaaclab_env
 
-        c, findings = read_isaaclab_env(path, joint_order=joint_order, robot=robot)
+        c, findings = read_isaaclab_env(path, joint_order=joint_order, robot=robot, onnx_path=onnx)
         for f in findings:
             print(f"reader: {f}", file=sys.stderr)
         return c
@@ -37,12 +41,14 @@ def _read_any(
     if "joint_ids_map" in d:
         from .readers.unitree_deploy import read_unitree_deploy
 
-        c, _ = read_unitree_deploy(path, None, robot=robot)
+        c, findings = read_unitree_deploy(path, onnx, robot=robot)
+        for f in findings:
+            print(f"reader {f.kind}: {f.path}: {f.message}", file=sys.stderr)
         return c
     if "num_obs" in d and "kps" in d:
         from .readers.rl_gym_deploy import read_rl_gym_deploy
 
-        c, findings = read_rl_gym_deploy(path, None, robot=robot)
+        c, findings = read_rl_gym_deploy(path, onnx, robot=robot)
         for f in findings:
             print(f"reader: {f}", file=sys.stderr)
         return c
@@ -50,6 +56,12 @@ def _read_any(
         f"{path}: not a contract, a Unitree deploy.yaml, a unitree_rl_gym config or an "
         "Isaac Lab env.yaml"
     )
+
+
+def _usage(msg: str) -> NoReturn:
+    """A command-line mistake: one line on stderr and exit 2, like argparse."""
+    print(f"gaitkeeper: {msg}", file=sys.stderr)
+    raise SystemExit(2)
 
 
 def _contract(args: argparse.Namespace) -> Contract:
@@ -60,7 +72,7 @@ def _contract(args: argparse.Namespace) -> Contract:
             args.config = None
             return _contract(args)
         order = getattr(args, "joint_order", None)
-        c = _read_any(cfg, args.robot, order)
+        c = _read_any(cfg, args.robot, order, getattr(args, "onnx", None))
         print(f"config: {Path(cfg).name} read as {c.get('source.format', '?')}", file=sys.stderr)
     elif args.contract:
         c = Contract.load(args.contract)
@@ -76,7 +88,7 @@ def _contract(args: argparse.Namespace) -> Contract:
         from .readers.legged_gym import read_legged_gym
 
         if not args.legged_gym_base:
-            sys.exit("--legged-gym needs --legged-gym-base (legged_robot_config.py)")
+            _usage("--legged-gym needs --legged-gym-base (legged_robot_config.py)")
         c, findings = read_legged_gym(
             args.legged_gym,
             args.legged_gym_base,
@@ -106,9 +118,9 @@ def _contract(args: argparse.Namespace) -> Contract:
         for f in findings:
             print(f"reader {f.kind}: {f.path}: {f.message}", file=sys.stderr)
     else:
-        sys.exit(
-            "give --contract, --deploy (Unitree deploy.yaml), --rl-gym (unitree_rl_gym config), "
-            "or --onnx (and optionally --yaml)"
+        _usage(
+            "give --config (an Isaac Lab env.yaml, a Unitree deploy.yaml, a unitree_rl_gym or "
+            "legged_gym config, or a contract), or --contract, or --onnx with mjlab metadata"
         )
     for name in getattr(args, "preset", None) or []:
         from .presets import apply_preset
@@ -120,11 +132,11 @@ def _contract(args: argparse.Namespace) -> Contract:
 
         path, sep, value = item.partition("=")
         if not sep or not path:
-            sys.exit(f"--set {item!r}: expected PATH=VALUE, e.g. timing.policy_dt=0.02")
+            _usage(f"--set {item!r}: expected PATH=VALUE, e.g. timing.policy_dt=0.02")
         try:
             c.set(path.strip(), yaml.safe_load(value), "user", "--set on the command line")
         except KeyError as e:
-            sys.exit(f"--set {item!r}: {e}")
+            _usage(f"--set {item!r}: {e}")
         print(f"set {path.strip()} = {value} (provenance: user)", file=sys.stderr)
     return c
 
@@ -133,7 +145,7 @@ def _policy(args: argparse.Namespace, contract: Contract, required: bool = True)
     path = getattr(args, "policy", None) or args.onnx
     if not path:
         if required:
-            sys.exit("give --policy (or --onnx)")
+            _usage("give --policy (or --onnx)")
         return None
     from .policy import OnnxPolicy
 
@@ -254,7 +266,7 @@ def cmd_envelope(args: argparse.Namespace) -> int:
     c = _contract(args)
     path = args.policy or args.onnx
     if not path:
-        sys.exit("give --policy (or --onnx)")
+        _usage("give --policy (or --onnx)")
     env = sweep(c, args.mjcf, path, backend=args.backend, workers=args.workers)
     pr = None
     if not args.no_probes or args.physics:
@@ -313,7 +325,7 @@ def cmd_deviation(args: argparse.Namespace) -> int:
         ref, _ = read_mjlab_export(args.onnx, None)
         name = "ONNX metadata"
     else:
-        sys.exit("give --reference contract.yaml or --onnx with training metadata")
+        _usage("give --reference contract.yaml or --onnx with training metadata")
     actions = names = None
     if args.trace:
         tr = Trace.load(args.trace)
@@ -421,7 +433,7 @@ def cmd_tour(args: argparse.Namespace) -> int:
     c = _contract(args)
     path = args.policy or args.onnx
     if not path:
-        sys.exit("give --policy (or --onnx)")
+        _usage("give --policy (or --onnx)")
     wps = None
     if args.waypoints:
         d = yaml.safe_load(Path(args.waypoints).read_text())
@@ -501,11 +513,12 @@ def cmd_adapter(args: argparse.Namespace) -> int:
     (out / f"{r.name}.probe.json").write_text(json.dumps(r.to_json(), indent=1, default=str))
     if v["ok"]:
         print(
-            f"Verified: gaitkeeper builds the adapter's observation to {v['max_abs']:.1g} on random inputs"
+            f"MATCHES ADAPTER: gaitkeeper builds the adapter's observation to {v['max_abs']:.1g} "
+            "on random inputs (a check of the reading, evidence L1)"
         )
         return 0
     bad = {k: round(x, 4) for k, x in v["per_term"].items() if x >= 1e-4}
-    print(f"UNVERIFIED: the observation differs from the adapter's: {bad}")
+    print(f"DIFFERS FROM ADAPTER: the observation gaitkeeper builds differs: {bad}")
     return 5
 
 
@@ -521,7 +534,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     c = _contract(args)
     path = args.policy or args.onnx
     if not path:
-        sys.exit("give --onnx (or --policy)")
+        _usage("give --onnx (or --policy)")
     print(contract_header(c))
     lim_path = "policy_io.commands.base_velocity.limit"
     if c.get(lim_path, None) is None:
@@ -535,9 +548,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"  {len(gaps)} field(s) no file states; results below assume defaults for them:")
         for g in sorted(gaps)[:12]:
             print(f"    {g}")
+        if not getattr(args, "preset", None):
+            from .presets import PRESETS
+
+            print(f"  a preset fills them for a known policy: --preset {' | '.join(PRESETS)}")
     else:
         print("  every field the runner needs comes from a file")
     print("\n2. Command response (does it do what it is told?)")
+    print("  sweeping the command grid (one to two minutes on a laptop)...", flush=True)
     env = sweep(c, args.mjcf, path, backend=args.backend, workers=args.workers)
     dead = [d["text"] for d in env.dead.values() if d.get("text")]
     for t in dead:
@@ -546,7 +564,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"  Finding    {f}")
     if not dead and not env.findings:
         print("  tracks the commands it was swept with")
-    print("\n3. Waypoint tour (closed loop, the teleop-walking-benchmark's draws)")
+    print("\n3. Waypoint tour (closed loop, the teleop-walking-benchmark's draws)", flush=True)
     names = list(c.get("policy_io.joints.names"))
     has_arms = any(j in BENCH_ARMS for j in names)
     rows = []
@@ -625,7 +643,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
         port = Contract.load(args.port) if args.port else None
     path = args.policy or args.onnx
     if not path:
-        sys.exit("give --policy (or --onnx)")
+        _usage("give --policy (or --onnx)")
     upstream = None
     if args.upstream or args.upstream_deploy:
         upstream = _read_any(
@@ -686,7 +704,7 @@ def cmd_task(args: argparse.Namespace) -> int:
     c = _contract(args)
     path = args.policy or args.onnx
     if not path:
-        sys.exit("give --policy (or --onnx)")
+        _usage("give --policy (or --onnx)")
     sched = load_schedule(args.schedule)
     pushes = []
     for p in args.push or []:
@@ -777,10 +795,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
             group = f" [{s.group}]" if s.group else ""
             print(f"  {name:18s} {state:12s} {s.repo}@{s.commit[:7]}{group}: {s.about}")
         if not args.sets:
-            print("fetch with `gaitkeeper fetch <set or group> ...` or `gaitkeeper fetch all`")
-            print(
-                "(`all` leaves out grouped sets such as the golden traces: `gaitkeeper fetch golden`)"
-            )
+            print("fetch with `gaitkeeper fetch <set> ...` or `gaitkeeper fetch all`")
         return 0
     names = fixtures.expand(args.sets)
     for n in names:
@@ -887,11 +902,82 @@ _PATH_FLAGS = (
 )
 
 
+def _not_onnx(path: str) -> str | None:
+    try:
+        import onnxruntime as ort
+
+        ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    except Exception as e:  # noqa: BLE001 - any load failure means the same to the user
+        first = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
+        return f"not a loadable ONNX model ({first[:160]})"
+    return None
+
+
+def _not_mjcf(path: str) -> str | None:
+    if not str(path).endswith(".xml"):
+        return None
+    try:
+        import mujoco
+
+        mujoco.MjModel.from_xml_path(str(path))
+    except ModuleNotFoundError:
+        return None  # reported by the command, with the install hint
+    except Exception as e:  # noqa: BLE001
+        first = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
+        return f"not a MuJoCo model MuJoCo can load ({first[:160]})"
+    return None
+
+
+def _not_text_config(path: str) -> str | None:
+    p = Path(path)
+    if p.is_dir():
+        return "a directory; give the config file"
+    try:
+        text = p.read_text()
+    except UnicodeDecodeError:
+        return "not a text file; give the YAML or Python config (the policy goes in --onnx)"
+    if p.suffix == ".py":
+        import ast
+
+        try:
+            ast.parse(text)
+        except SyntaxError as e:
+            return f"not valid Python (line {e.lineno}: {e.msg})"
+    elif p.suffix in (".yaml", ".yml"):
+        import yaml
+
+        class _Lenient(yaml.SafeLoader):
+            pass
+
+        _Lenient.add_multi_constructor("", lambda ld, suffix, n: None)
+        try:
+            yaml.load(text, Loader=_Lenient)
+        except yaml.YAMLError as e:
+            return f"not valid YAML ({str(e).splitlines()[0]})"
+    return None
+
+
 def _check_inputs(args: argparse.Namespace) -> str | None:
     for flag in _PATH_FLAGS:
         v = getattr(args, flag, None)
         if v and not Path(v).exists():
             return f"--{flag.replace('_', '-')} {v}: no such file"
+    for flag in ("onnx", "policy"):
+        v = getattr(args, flag, None)
+        if v and str(v).endswith(".onnx"):
+            problem = _not_onnx(v)
+            if problem:
+                return f"--{flag} {v}: {problem}"
+    v = getattr(args, "mjcf", None)
+    if v:
+        problem = _not_mjcf(v)
+        if problem:
+            return f"--mjcf {v}: {problem}"
+    v = getattr(args, "config", None)
+    if v:
+        problem = _not_text_config(v)
+        if problem:
+            return f"--config {v}: {problem}"
     t = getattr(args, "trace", None)
     if (
         isinstance(t, str)
@@ -924,7 +1010,12 @@ def _floor_warning(mjcf: str) -> str | None:
 def main(argv: list[str] | None = None) -> int:
     from . import __version__
 
-    ap = argparse.ArgumentParser(prog="gaitkeeper")
+    ap = argparse.ArgumentParser(
+        prog="gaitkeeper",
+        description="Sim-to-sim checks for humanoid locomotion policies.",
+        epilog="New here? Start with `gaitkeeper demo`, then `gaitkeeper doctor` on your own "
+        "policy. Each command has --help.",
+    )
     ap.add_argument("--version", action="version", version=f"gaitkeeper {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -933,6 +1024,11 @@ def main(argv: list[str] | None = None) -> int:
             "--config",
             help="any config gaitkeeper reads, by content: Isaac Lab env.yaml, Unitree deploy.yaml, "
             "unitree_rl_gym config, legged_gym config (.py, with --legged-gym-base), or a contract",
+        )
+        p.add_argument(
+            "--joint-order",
+            help="deploy.yaml whose joint_ids_map gives the policy's joint order "
+            "(an Isaac Lab env.yaml does not record it)",
         )
         p.add_argument("--contract", help="contract.yaml")
         p.add_argument("--onnx", help="exported policy; its metadata is read as the contract")
@@ -962,26 +1058,33 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument(
             "--backend",
             choices=["native_implicit", "explicit_zoh", "python_pd", "standin_implicit"],
+            help="actuator model to simulate (default: chosen from the contract's actuator kind)",
         )
-        p.add_argument("--json")
+        p.add_argument("--json", help="write the result as JSON to this path")
 
     p = sub.add_parser(
         "demo", help="the issue 145 setup end to end (fetches its files on first use)"
     )
-    p.add_argument("--seeds", type=int, default=3)
-    p.add_argument("--workers", type=int)
-    p.add_argument("--json")
+    p.add_argument(
+        "--seeds", type=int, default=3, help="random seeds per setting (default %(default)s)"
+    )
+    p.add_argument(
+        "--workers", type=int, help="parallel worker processes (default: one per CPU, up to 8)"
+    )
+    p.add_argument("--json", help="write the result as JSON to this path")
     p.add_argument("--no-fetch", action="store_true", help="fail instead of downloading")
     p.set_defaults(fn=cmd_demo)
 
     p = sub.add_parser("fetch", help="download pinned third-party models and policies")
     p.add_argument("sets", nargs="*", help="fixture set names, or all; none lists them")
-    p.add_argument("--list", action="store_true")
+    p.add_argument(
+        "--list", action="store_true", help="list the fixture sets and whether they are present"
+    )
     p.set_defaults(fn=cmd_fetch)
 
     p = sub.add_parser("inspect", help="read a contract from exported files")
     contract_args(p)
-    p.add_argument("--out")
+    p.add_argument("--out", help="write the contract as YAML to this path")
     p.set_defaults(fn=cmd_inspect)
 
     p = sub.add_parser(
@@ -992,11 +1095,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--policy", help="policy file for boundary B (defaults to --onnx)")
     p.add_argument("--mjcf", help="target model: adds D, the closed loop and the counterfactual")
     p.add_argument("--seeds", type=int, default=12, help="seeded starts for the closed loop")
-    p.add_argument("--no-counterfactual", action="store_true")
+    p.add_argument(
+        "--no-counterfactual",
+        action="store_true",
+        help="skip the model counterfactual at boundary D",
+    )
     p.add_argument("--task-schedule", help="a requested task: command schedule run on the target")
-    p.add_argument("--task-seconds", type=float)
-    p.add_argument("--workers", type=int)
-    p.add_argument("--json")
+    p.add_argument("--task-seconds", type=float, help="simulated seconds for the task run")
+    p.add_argument(
+        "--workers", type=int, help="parallel worker processes (default: one per CPU, up to 8)"
+    )
+    p.add_argument("--json", help="write the result as JSON to this path")
     p.set_defaults(fn=cmd_verify)
 
     p = sub.add_parser("residual", help="boundary D only: the dynamics residual of a trace")
@@ -1004,24 +1113,35 @@ def main(argv: list[str] | None = None) -> int:
     contract_args(p)
     p.add_argument("--mjcf", required=True, help="analysis target (MJCF, .mjb or trace directory)")
     p.add_argument("--fits", action="store_true", help="parameter fits (research)")
-    p.add_argument("--json")
+    p.add_argument("--json", help="write the result as JSON to this path")
     p.set_defaults(fn=cmd_residual)
 
     p = sub.add_parser("task", help="a requested task with no reference: L1 findings")
     sim_args(p)
     p.add_argument("--schedule", required=True, help="command schedule, YAML or CSV t,vx,vy,wz")
-    p.add_argument("--name")
-    p.add_argument("--seconds", type=float)
-    p.add_argument("--seeds", type=int, default=3)
+    p.add_argument("--name", help="label used in the report")
+    p.add_argument("--seconds", type=float, help="simulated seconds per run")
+    p.add_argument(
+        "--seeds", type=int, default=3, help="random seeds per setting (default %(default)s)"
+    )
     p.add_argument("--hold", help="comma separated joints the policy does not own")
-    p.add_argument("--unowned-obs", choices=["real", "echo_action", "default"], default="real")
+    p.add_argument(
+        "--unowned-obs",
+        choices=["real", "echo_action", "default"],
+        default="real",
+        help="what the policy observes for joints it does not drive",
+    )
     p.add_argument("--push", action="append", help="t,fx,fy,fz[,body[,duration]]")
     p.add_argument("--push-every", type=float, help="horizontal pushes of fixed size every N s")
-    p.add_argument("--push-first", type=float, default=2.0)
-    p.add_argument("--push-force", type=float, default=0.0)
-    p.add_argument("--push-duration", type=float, default=0.1)
-    p.add_argument("--push-body", default="torso_link")
-    p.add_argument("--workers", type=int)
+    p.add_argument(
+        "--push-first", type=float, default=2.0, help="time of the first push, in seconds"
+    )
+    p.add_argument("--push-force", type=float, default=0.0, help="push force, in newtons")
+    p.add_argument("--push-duration", type=float, default=0.1, help="push duration, in seconds")
+    p.add_argument("--push-body", default="torso_link", help="body the push is applied to")
+    p.add_argument(
+        "--workers", type=int, help="parallel worker processes (default: one per CPU, up to 8)"
+    )
     p.set_defaults(fn=cmd_task)
 
     p = sub.add_parser(
@@ -1030,7 +1150,9 @@ def main(argv: list[str] | None = None) -> int:
     sim_args(p)
     p.add_argument("--waypoints", help="YAML list of [x, y, yaw] relative to the start pose")
     p.add_argument("--point-s", type=float, default=5.0, help="seconds per waypoint")
-    p.add_argument("--seeds", type=int, default=3)
+    p.add_argument(
+        "--seeds", type=int, default=3, help="random seeds per setting (default %(default)s)"
+    )
     p.add_argument(
         "--arms",
         choices=["policy", "hold", "walk"],
@@ -1041,9 +1163,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--arms-obs", choices=["real", "echo_action", "default", "contract"], default="real"
     )
-    p.add_argument("--hold-gains", choices=["armature", "policy"], default="armature")
-    p.add_argument("--punches", choices=["none", "benchmark"], default="none")
-    p.add_argument("--workers", type=int)
+    p.add_argument(
+        "--hold-gains",
+        choices=["armature", "policy"],
+        default="armature",
+        help="gains the harness holds joints with",
+    )
+    p.add_argument(
+        "--punches",
+        choices=["none", "benchmark"],
+        default="none",
+        help="punches during the tour: none, or the benchmark's",
+    )
+    p.add_argument(
+        "--workers", type=int, help="parallel worker processes (default: one per CPU, up to 8)"
+    )
     p.set_defaults(fn=cmd_tour)
 
     p = sub.add_parser(
@@ -1063,12 +1197,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--upstream-deploy", help="the same, from the authors' Unitree deploy.yaml")
     p.add_argument("--stages", help="comma separated subset of own,arms_hold,arms_walk,punches")
     p.add_argument("--waypoints", help="YAML list of [x, y, yaw]; default the benchmark's draws")
-    p.add_argument("--point-s", type=float, default=5.0)
-    p.add_argument("--seeds", type=int, default=3)
+    p.add_argument("--point-s", type=float, default=5.0, help="seconds per waypoint")
+    p.add_argument(
+        "--seeds", type=int, default=3, help="random seeds per setting (default %(default)s)"
+    )
     p.add_argument("--envelope", action="store_true", help="add the command envelope")
-    p.add_argument("--name")
+    p.add_argument("--name", help="label used in the report")
     p.add_argument("--md", help="write the report as markdown")
-    p.add_argument("--workers", type=int)
+    p.add_argument(
+        "--workers", type=int, help="parallel worker processes (default: one per CPU, up to 8)"
+    )
     p.set_defaults(fn=cmd_bench)
 
     p = sub.add_parser(
@@ -1076,9 +1214,13 @@ def main(argv: list[str] | None = None) -> int:
         help="your policy in a MuJoCo scene: contract gaps, dead zones, and a waypoint tour",
     )
     sim_args(p)
-    p.add_argument("--seeds", type=int, default=3)
+    p.add_argument(
+        "--seeds", type=int, default=3, help="random seeds per setting (default %(default)s)"
+    )
     p.add_argument("--quick", action="store_true", help="the tour without arm motion or punches")
-    p.add_argument("--workers", type=int)
+    p.add_argument(
+        "--workers", type=int, help="parallel worker processes (default: one per CPU, up to 8)"
+    )
     p.set_defaults(fn=cmd_doctor)
 
     p = sub.add_parser(
@@ -1095,26 +1237,43 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("trace", nargs="?", help="golden trace directory or harness log .npz")
     p.add_argument("--trace", dest="trace_opt", help="same as the positional argument")
     p.add_argument("--no-raw", action="store_true", help="use (obs, action) only")
-    p.add_argument("--json")
+    p.add_argument("--json", help="write the result as JSON to this path")
     p.set_defaults(fn=cmd_infer)
 
     p = sub.add_parser("run", help="closed-loop run of a policy in a target MJCF")
     sim_args(p)
-    p.add_argument("--seconds", type=float, default=10.0)
+    p.add_argument("--seconds", type=float, default=10.0, help="simulated seconds per run")
     p.add_argument("--command", type=_triple, default=(0.5, 0.0, 0.0), help="vx,vy,wz")
     p.add_argument("--schedule", help="command schedule, YAML or CSV rows t,vx,vy,wz")
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--policy-mode", choices=["policy", "zero", "random"], default="policy")
+    p.add_argument("--seed", type=int, default=0, help="random seed")
+    p.add_argument(
+        "--policy-mode",
+        choices=["policy", "zero", "random"],
+        default="policy",
+        help="drive with the policy, zero actions or random actions",
+    )
     p.add_argument("--push", action="append", help="t,fx,fy,fz[,body[,duration]]")
     p.add_argument("--kick", action="append", help="t,vx,vy base velocity kick")
     p.add_argument("--push-every", type=float, help="periodic random pushes every N s")
-    p.add_argument("--push-force", type=float, default=0.0)
-    p.add_argument("--push-velocity", type=float, default=0.0)
+    p.add_argument("--push-force", type=float, default=0.0, help="push force, in newtons")
+    p.add_argument(
+        "--push-velocity", type=float, default=0.0, help="push as a velocity kick, in m/s"
+    )
     p.add_argument(
         "--hold", help="comma separated joints the policy does not own, held at the default"
     )
-    p.add_argument("--unowned-obs", choices=["real", "echo_action", "default"], default="real")
-    p.add_argument("--limits", choices=["model", "contract"], default="model")
+    p.add_argument(
+        "--unowned-obs",
+        choices=["real", "echo_action", "default"],
+        default="real",
+        help="what the policy observes for joints it does not drive",
+    )
+    p.add_argument(
+        "--limits",
+        choices=["model", "contract"],
+        default="model",
+        help="effort limits from the model or from the contract",
+    )
     p.add_argument("--timestep", type=float, help="python_pd only")
     p.add_argument(
         "--integrator", choices=["euler", "implicitfast", "implicit", "rk4"], help="python_pd only"
@@ -1131,7 +1290,9 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("envelope", help="command response map with dead zones and scenarios")
     sim_args(p)
-    p.add_argument("--workers", type=int)
+    p.add_argument(
+        "--workers", type=int, help="parallel worker processes (default: one per CPU, up to 8)"
+    )
     p.add_argument("--no-probes", action="store_true", help="skip standstill, kick and push probes")
     p.add_argument("--push-seeds", type=int, default=10, help="seeds per push level (30 s runs)")
     p.add_argument(

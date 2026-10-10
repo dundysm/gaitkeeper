@@ -111,7 +111,7 @@ def test_adapter_command_writes_both_contracts(tmp_path, capsys):
 
     code = main(["adapter", str(TOY), "--mjcf", str(UMJ_G1), "--out", str(tmp_path)])
     out = capsys.readouterr().out
-    assert code == 0 and "Verified" in out and "velocity_commands[3]*" in out
+    assert code == 0 and "MATCHES ADAPTER" in out and "velocity_commands[3]*" in out
     assert (tmp_path / "toy.trained.yaml").exists() and (tmp_path / "toy.port.yaml").exists()
 
 

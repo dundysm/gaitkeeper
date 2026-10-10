@@ -81,7 +81,7 @@ setup end to end on the CPU: unitree_rl_lab's G1 velocity policy, as shipped, on
 unitree_mujoco's G1 scene, driven through a tour of small commands and in-place
 turns with the arms held, then 600 N punches. On first use it downloads the
 policy and the scene (about 20 MB, pinned commits, sha256 checked) into
-`~/.cache/gaitkeeper`. It takes under a minute and prints the contract it read,
+`~/.cache/gaitkeeper`. It takes one to two minutes and prints the contract it read,
 the command response map with its dead zones, the task segment by segment, and
 the finding:
 
@@ -107,10 +107,21 @@ MuJoCo scene of the robot:
 gaitkeeper doctor --onnx policy.onnx --config params/env.yaml --mjcf scene.xml
 ```
 
-`--config` is read by content: the `env.yaml` Isaac Lab saves with a training run, a
+To try it first on a policy you do not have to find, use the files `gaitkeeper demo` (or
+`gaitkeeper fetch g1_rl_lab g1_unitree_mujoco`) downloaded:
+
+```bash
+D=~/.cache/gaitkeeper   # or $GAITKEEPER_DATA
+gaitkeeper doctor --onnx $D/g1_rl_lab/policy.onnx --config $D/g1_rl_lab/deploy.yaml \
+    --mjcf $D/g1_unitree_mujoco/scene_29dof.xml
+```
+
+`--config` is read by content: the `env.yaml` Isaac Lab saves with a training run (add
+`--joint-order deploy.yaml`, since env.yaml does not record the policy's joint order), a
 Unitree `deploy.yaml`, a unitree_rl_gym deploy config, a legged_gym config (`.py`, with
 `--legged-gym-base legged_robot_config.py`) or a gaitkeeper contract. `doctor` then says
-three things, in about a minute on a laptop:
+three things, in one to two and a half minutes on a laptop (`--quick` skips the arm
+motion and punches):
 
 1. **Contract**: which fields no file states (the runner assumes defaults for those).
 2. **Command response**: dead zones, commands the policy ignores in this runner.
@@ -119,7 +130,7 @@ three things, in about a minute on a laptop:
 
 For the unitree_rl_lab G1 policy on unitree_mujoco's scene it finds a dead zone below
 0.2 m/s and no turning in place, survives the tour with its own arms (90 of 90 s), and
-lasts 15 s once the arms are moved at random. When it falls with nothing added, the next
+lasts about 11 s once the arms are moved at random. When it falls with nothing added, the next
 step is `gaitkeeper bench --upstream <the authors' config>` to separate the port from the
 policy, or a golden trace and `gaitkeeper verify` for a cause.
 
@@ -138,9 +149,12 @@ runner never raises the level.
 **Exit codes** (`verify`, `task`): `0` PASS (or L1 findings with nothing
 failing) · `1` CONTRACT · `2` INVALID_INPUT · `3` PHYSICS · `4`
 POLICY_UNDER_TASK · `5` UNDETERMINED or an L1 finding such as
-TASK_FAILURE_OBSERVED · `6` UNSUPPORTED. Every command exits 2 with a one line
-message when an input is missing or unreadable (`GAITKEEPER_DEBUG=1` shows the
-traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
+TASK_FAILURE_OBSERVED · `6` UNSUPPORTED. `doctor` and `bench` exit `0` when
+nothing was found and `5` otherwise; `adapter` exits `5` when the observation it
+rebuilds differs from the adapter's. Every command exits 2 with a one line
+message when an input is missing, unreadable or of the wrong kind
+(`GAITKEEPER_DEBUG=1` shows the traceback), and warns when the MJCF has no floor.
+`demo` exits 0 when it ran.
 
 ## Commands
 
@@ -478,9 +492,9 @@ Contributions are welcome, and most of the useful ones need no code: run `gaitke
 doctor` on your own policy and report what it gets wrong, ask for a reader for your config
 format, or send labeled harness logs. For code, issues labeled
 [good first issue](https://github.com/dundysm/gaitkeeper/labels/good%20first%20issue) are a
-place to start. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the layout and how to add
+place to start. [CONTRIBUTING.md](https://github.com/dundysm/gaitkeeper/blob/main/CONTRIBUTING.md) has the setup, the layout and how to add
 a reader; questions go in [Discussions](https://github.com/dundysm/gaitkeeper/discussions).
-If you use gaitkeeper in a paper, [CITATION.cff](CITATION.cff) has the citation.
+If you use gaitkeeper in a paper, [CITATION.cff](https://github.com/dundysm/gaitkeeper/blob/main/CITATION.cff) has the citation.
 
 ## License
 

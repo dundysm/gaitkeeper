@@ -28,13 +28,14 @@ harnesses it has not seen. You do not need to write code to help.
 git clone https://github.com/dundysm/gaitkeeper && cd gaitkeeper
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[sim,dev]"
-python -m pytest -q -rs          # about 2 minutes; tests that need downloads skip and say why
+python -m pytest -q -rs          # ~15 s; tests that need downloads skip and say why
 ruff check . && ruff format --check .
 ```
 
 Python 3.10 or newer. Everything runs on the CPU; no GPU is needed for the tests or the
 runner. `gaitkeeper fetch` downloads the third-party models and policies some tests use;
-without them those tests skip, which is fine for most changes. CI runs the same suite
+without them those tests skip, which is fine for most changes; with them the suite takes 2
+to 5 minutes (use `-n auto` with pytest-xdist on a machine with memory to spare). CI runs the suite
 without fixtures on Python 3.10 and 3.13.
 
 ## Where things are

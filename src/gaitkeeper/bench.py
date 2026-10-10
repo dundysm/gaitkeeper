@@ -131,8 +131,9 @@ def attribute(stages: dict[str, dict[str, Any]], seconds: float) -> list[str]:
     out = []
     own = stages.get(order[0]) if order else None
     if own and own["mean_survival_s"] < seconds - NOTABLE_S:
+        where = "under its authors' config" if order[0] == "upstream" else "in its own setup"
         out.append(
-            f"falls in its own setup: mean survival {own['mean_survival_s']:.1f} of {seconds:.0f} s "
+            f"falls {where}: mean survival {own['mean_survival_s']:.1f} of {seconds:.0f} s "
             "with nothing the harness adds; the port is not the first suspect"
         )
     for lost, a, b in sorted(steps, reverse=True):

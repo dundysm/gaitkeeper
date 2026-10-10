@@ -36,7 +36,7 @@ Issues = "https://github.com/dundysm/gaitkeeper/issues"
 Changelog = "https://github.com/dundysm/gaitkeeper/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff==0.16.8", "onnx>=1.15"]
+dev = ["pytest>=7", "ruff==0.16.10", "onnx>=1.15"]
 # The closed-loop runner, checks and envelope simulate in MuJoCo on the CPU.
 sim = ["mujoco>=3.3,<4"]
 # The recorder runs inside the training stack. For mjlab it needs the pinned

@@ -30,6 +30,16 @@ gaitkeeper tells them apart, and says how much evidence backs the answer.
   mostly small commands, which is one reason it can score 0% with a harness that follows the contract.</sub>
 </p>
 
+## What it found
+
+<p align="center">
+  <a href="https://dundysm.github.io/gaitkeeper/results/"><img src="https://raw.githubusercontent.com/dundysm/gaitkeeper/main/docs/assets/audit.svg" alt="G1 Port Audit: for 16 ported G1 walking policies, mean survival on the teleop-walking-benchmark tour at each stage from the authors' config to the full benchmark, the cause gaitkeeper names for each, and gaitkeeper's survival against the benchmark's (Pearson 0.94)." width="900"></a>
+  <br>
+  <sub>Sixteen G1 walking policies from rhoyn/teleop-walking-benchmark, each read from its port's own adapter code
+  and run one change at a time. Most stand and walk until the harness moves their arms; one breaks on the port's
+  values; three fall under their authors' own config. <a href="https://dundysm.github.io/gaitkeeper/results/">Full audit</a>.</sub>
+</p>
+
 ## How it decides
 
 <p align="center">

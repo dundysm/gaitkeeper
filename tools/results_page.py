@@ -362,6 +362,135 @@ def main() -> None:
     if a.fragment:
         Path(a.fragment).write_text(head + "\n" + body)
     print(f"wrote {a.out}")
+    write_readme_svg()
+
+
+# -- README figure ---------------------------------------------------------------------
+
+SVG_CSS = """
+:root { --bg:#ffffff; --fg:#1f2328; --muted:#59636e; --edge:#d1d9e0; --cell:#0969da; --pt:#0969da;
+  --policy:#59636e; --port:#cf222e; --arms:#9a6700; --walk:#bf8700; --punch:#8250df; --unclear:#8c959f; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --edge:#3d444d; --cell:#4493f8; --pt:#4493f8;
+    --policy:#9198a1; --port:#f85149; --arms:#d29922; --walk:#e3b341; --punch:#a371f7; --unclear:#6e7681; } }
+text { font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; fill: var(--fg); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.bg { fill: var(--bg); }
+.muted { fill: var(--muted); }
+.h { font-size: 15px; font-weight: 700; }
+.lab { font-size: 11px; fill: var(--muted); }
+.name { font-size: 12px; }
+.val { font-size: 10.5px; }
+.cell { fill: var(--cell); }
+.empty { fill: none; stroke: var(--edge); stroke-dasharray: 2 3; }
+.ax { stroke: var(--edge); }
+.diag { stroke: var(--muted); stroke-dasharray: 3 4; }
+.pt { fill: var(--pt); }
+.big { font-size: 26px; font-weight: 700; }
+"""
+
+
+def readme_svg(d: dict) -> str:
+    total = float(d["tour_s"])
+    order = ["port", "arms", "walk", "punch", "policy", "unclear"]
+    pols = [p for p in d["policies"] if p.get("stages")]
+    pols.sort(key=lambda p: (order.index(p["cause"]), p["name"]))
+    cols = [
+        ("upstream", "Authors'"),
+        ("own", "Port"),
+        ("arms_hold", "Arms held"),
+        ("arms_walk", "Arm walk"),
+        ("punches", "Punches"),
+        ("port", "Full"),
+    ]
+    x0, cw, ch, gap, top = 232, 54, 19, 3, 74
+    W = 900
+    H = top + len(pols) * (ch + gap) + 40
+    o = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-labelledby="t d">',
+        '<title id="t">G1 Port Audit: what stops each policy</title>',
+        f'<desc id="d">Mean survival on the teleop-walking-benchmark tour (out of {total:.0f} s) at each stage, '
+        "for 16 ported G1 policies, with the cause gaitkeeper names; and gaitkeeper survival against the benchmark.</desc>",
+        f"<style>{SVG_CSS}</style>",
+        f'<rect class="bg" width="{W}" height="{H}" rx="8"/>',
+        '<text x="20" y="30" class="h">What stops each policy</text>',
+        f'<text x="20" y="48" class="lab">Mean survival (s of {total:.0f}) on the benchmark tour, one change at a time</text>',
+    ]
+    for i, (_, lab) in enumerate(cols):
+        o.append(
+            f'<text x="{x0 + i * (cw + gap) + cw / 2}" y="{top - 8}" class="lab" text-anchor="middle">{e(lab)}</text>'
+        )
+    for r, p in enumerate(pols):
+        y = top + r * (ch + gap)
+        o.append(f'<text x="20" y="{y + 13.5}" class="name mono">{e(p["name"])}</text>')
+        o.append(
+            f'<text x="132" y="{y + 13.5}" class="name" style="fill: var(--{p["cause"]}); font-weight:600">{e(CAUSES[p["cause"]][0])}</text>'
+        )
+        for i, (k, _) in enumerate(cols):
+            x = x0 + i * (cw + gap)
+            st = p["stages"].get(k)
+            if st is None:
+                o.append(
+                    f'<rect class="empty" x="{x + 0.5}" y="{y + 0.5}" width="{cw - 1}" height="{ch - 1}" rx="2"/>'
+                )
+                continue
+            v = st["mean_survival_s"]
+            a = 0.12 + 0.88 * v / total
+            light = a > 0.55
+            o.append(
+                f'<rect class="cell" x="{x}" y="{y}" width="{cw}" height="{ch}" rx="2" opacity="{a:.2f}"><title>{e(p["name"])}, {e(_)}: {v:.1f} s</title></rect>'
+            )
+            col = ' style="fill:#ffffff"' if light else ""
+            o.append(
+                f'<text x="{x + cw / 2}" y="{y + 13.5}" class="val mono" text-anchor="middle"{col}>{v:.0f}</text>'
+            )
+    o.append(
+        f'<text x="20" y="{H - 16}" class="lab">Dashed: stage not run (no upstream config read, or the policy lists no arms). '
+        "Full results: dundysm.github.io/gaitkeeper/results</text>"
+    )
+    # scatter
+    sx, sy, sw, sh = 640, 96, 236, 230
+    s = sw / total
+    t = sh / total
+    o.append(f'<text x="{sx - 30}" y="30" class="h">Agreement with the benchmark</text>')
+    o.append(
+        f'<text x="{sx - 30}" y="68" class="big">{d["pearson"]:.2f}</text><text x="{sx + 34}" y="68" class="lab">Pearson</text>'
+    )
+    o.append(
+        f'<text x="{sx + 104}" y="68" class="big">{d["spearman"]:.2f}</text><text x="{sx + 168}" y="68" class="lab">Spearman</text>'
+    )
+    o.append(
+        f'<line class="ax" x1="{sx}" y1="{sy + sh}" x2="{sx + sw}" y2="{sy + sh}"/><line class="ax" x1="{sx}" y1="{sy}" x2="{sx}" y2="{sy + sh}"/>'
+    )
+    o.append(f'<line class="diag" x1="{sx}" y1="{sy + sh}" x2="{sx + sw}" y2="{sy}"/>')
+    for v in (0, 30, 60, 90):
+        o.append(
+            f'<text x="{sx + v * s}" y="{sy + sh + 15}" class="lab mono" text-anchor="middle">{v}</text>'
+        )
+        o.append(
+            f'<text x="{sx - 6}" y="{sy + sh - v * t + 4}" class="lab mono" text-anchor="end">{v}</text>'
+        )
+    o.append(
+        f'<text x="{sx + sw / 2}" y="{sy + sh + 32}" class="lab" text-anchor="middle">gaitkeeper: port, full benchmark (s)</text>'
+    )
+    o.append(
+        f'<text transform="translate({sx - 32} {sy + sh / 2}) rotate(-90)" class="lab" text-anchor="middle">benchmark, MuJoCo (s)</text>'
+    )
+    for p in pols:
+        if p.get("benchmark_mujoco") is not None:
+            x, y = p["stages"]["port"]["mean_survival_s"], p["benchmark_mujoco"]
+            o.append(
+                f'<circle class="pt" cx="{sx + x * s:.1f}" cy="{sy + sh - y * t:.1f}" r="4.5"><title>{e(p["name"])}: {x:.1f} s here, {y:.1f} s in the benchmark</title></circle>'
+            )
+    o.append("</svg>")
+    return "\n".join(o)
+
+
+def write_readme_svg() -> None:
+    d = json.loads(DATA.read_text())
+    out = ROOT / "docs" / "assets" / "audit.svg"
+    out.write_text(readme_svg(d))
+    print(f"wrote {out}")
 
 
 if __name__ == "__main__":

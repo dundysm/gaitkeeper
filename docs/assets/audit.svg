@@ -1,0 +1,279 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="466" viewBox="0 0 900 466" role="img" aria-labelledby="t d">
+<title id="t">G1 Port Audit: what stops each policy</title>
+<desc id="d">Mean survival on the teleop-walking-benchmark tour (out of 90 s) at each stage, for 16 ported G1 policies, with the cause gaitkeeper names; and gaitkeeper survival against the benchmark.</desc>
+<style>
+:root { --bg:#ffffff; --fg:#1f2328; --muted:#59636e; --edge:#d1d9e0; --cell:#0969da; --pt:#0969da;
+  --policy:#59636e; --port:#cf222e; --arms:#9a6700; --walk:#bf8700; --punch:#8250df; --unclear:#8c959f; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --edge:#3d444d; --cell:#4493f8; --pt:#4493f8;
+    --policy:#9198a1; --port:#f85149; --arms:#d29922; --walk:#e3b341; --punch:#a371f7; --unclear:#6e7681; } }
+text { font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; fill: var(--fg); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.bg { fill: var(--bg); }
+.muted { fill: var(--muted); }
+.h { font-size: 15px; font-weight: 700; }
+.lab { font-size: 11px; fill: var(--muted); }
+.name { font-size: 12px; }
+.val { font-size: 10.5px; }
+.cell { fill: var(--cell); }
+.empty { fill: none; stroke: var(--edge); stroke-dasharray: 2 3; }
+.ax { stroke: var(--edge); }
+.diag { stroke: var(--muted); stroke-dasharray: 3 4; }
+.pt { fill: var(--pt); }
+.big { font-size: 26px; font-weight: 700; }
+</style>
+<rect class="bg" width="900" height="466" rx="8"/>
+<text x="20" y="30" class="h">What stops each policy</text>
+<text x="20" y="48" class="lab">Mean survival (s of 90) on the benchmark tour, one change at a time</text>
+<text x="259.0" y="66" class="lab" text-anchor="middle">Authors&#x27;</text>
+<text x="316.0" y="66" class="lab" text-anchor="middle">Port</text>
+<text x="373.0" y="66" class="lab" text-anchor="middle">Arms held</text>
+<text x="430.0" y="66" class="lab" text-anchor="middle">Arm walk</text>
+<text x="487.0" y="66" class="lab" text-anchor="middle">Punches</text>
+<text x="544.0" y="66" class="lab" text-anchor="middle">Full</text>
+<text x="20" y="87.5" class="name mono">schoi</text>
+<text x="132" y="87.5" class="name" style="fill: var(--port); font-weight:600">Port values</text>
+<rect class="cell" x="232" y="74" width="54" height="19" rx="2" opacity="1.00"><title>schoi, Authors&#x27;: 90.0 s</title></rect>
+<text x="259.0" y="87.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="289" y="74" width="54" height="19" rx="2" opacity="0.17"><title>schoi, Port: 4.7 s</title></rect>
+<text x="316.0" y="87.5" class="val mono" text-anchor="middle">5</text>
+<rect class="empty" x="346.5" y="74.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="403" y="74" width="54" height="19" rx="2" opacity="0.16"><title>schoi, Arm walk: 4.2 s</title></rect>
+<text x="430.0" y="87.5" class="val mono" text-anchor="middle">4</text>
+<rect class="cell" x="460" y="74" width="54" height="19" rx="2" opacity="0.16"><title>schoi, Punches: 3.6 s</title></rect>
+<text x="487.0" y="87.5" class="val mono" text-anchor="middle">4</text>
+<rect class="cell" x="517" y="74" width="54" height="19" rx="2" opacity="0.16"><title>schoi, Full: 3.6 s</title></rect>
+<text x="544.0" y="87.5" class="val mono" text-anchor="middle">4</text>
+<text x="20" y="109.5" class="name mono">clobot</text>
+<text x="132" y="109.5" class="name" style="fill: var(--arms); font-weight:600">Arm handoff</text>
+<rect class="cell" x="232" y="96" width="54" height="19" rx="2" opacity="1.00"><title>clobot, Authors&#x27;: 90.0 s</title></rect>
+<text x="259.0" y="109.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="289" y="96" width="54" height="19" rx="2" opacity="1.00"><title>clobot, Port: 90.0 s</title></rect>
+<text x="316.0" y="109.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="346" y="96" width="54" height="19" rx="2" opacity="0.14"><title>clobot, Arms held: 2.2 s</title></rect>
+<text x="373.0" y="109.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="403" y="96" width="54" height="19" rx="2" opacity="0.14"><title>clobot, Arm walk: 1.6 s</title></rect>
+<text x="430.0" y="109.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="460" y="96" width="54" height="19" rx="2" opacity="0.14"><title>clobot, Punches: 1.6 s</title></rect>
+<text x="487.0" y="109.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="517" y="96" width="54" height="19" rx="2" opacity="0.14"><title>clobot, Full: 1.6 s</title></rect>
+<text x="544.0" y="109.5" class="val mono" text-anchor="middle">2</text>
+<text x="20" y="131.5" class="name mono">legged_rl_lab</text>
+<text x="132" y="131.5" class="name" style="fill: var(--arms); font-weight:600">Arm handoff</text>
+<rect class="empty" x="232.5" y="118.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="289" y="118" width="54" height="19" rx="2" opacity="0.91"><title>legged_rl_lab, Port: 80.8 s</title></rect>
+<text x="316.0" y="131.5" class="val mono" text-anchor="middle" style="fill:#ffffff">81</text>
+<rect class="cell" x="346" y="118" width="54" height="19" rx="2" opacity="0.22"><title>legged_rl_lab, Arms held: 10.6 s</title></rect>
+<text x="373.0" y="131.5" class="val mono" text-anchor="middle">11</text>
+<rect class="cell" x="403" y="118" width="54" height="19" rx="2" opacity="0.24"><title>legged_rl_lab, Arm walk: 12.6 s</title></rect>
+<text x="430.0" y="131.5" class="val mono" text-anchor="middle">13</text>
+<rect class="cell" x="460" y="118" width="54" height="19" rx="2" opacity="0.22"><title>legged_rl_lab, Punches: 10.3 s</title></rect>
+<text x="487.0" y="131.5" class="val mono" text-anchor="middle">10</text>
+<rect class="cell" x="517" y="118" width="54" height="19" rx="2" opacity="0.22"><title>legged_rl_lab, Full: 10.3 s</title></rect>
+<text x="544.0" y="131.5" class="val mono" text-anchor="middle">10</text>
+<text x="20" y="153.5" class="name mono">dm_march</text>
+<text x="132" y="153.5" class="name" style="fill: var(--walk); font-weight:600">Arm walk</text>
+<rect class="cell" x="232" y="140" width="54" height="19" rx="2" opacity="1.00"><title>dm_march, Authors&#x27;: 90.0 s</title></rect>
+<text x="259.0" y="153.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="289" y="140" width="54" height="19" rx="2" opacity="1.00"><title>dm_march, Port: 90.0 s</title></rect>
+<text x="316.0" y="153.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="346" y="140" width="54" height="19" rx="2" opacity="1.00"><title>dm_march, Arms held: 90.0 s</title></rect>
+<text x="373.0" y="153.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="403" y="140" width="54" height="19" rx="2" opacity="0.47"><title>dm_march, Arm walk: 36.3 s</title></rect>
+<text x="430.0" y="153.5" class="val mono" text-anchor="middle">36</text>
+<rect class="cell" x="460" y="140" width="54" height="19" rx="2" opacity="0.28"><title>dm_march, Punches: 16.2 s</title></rect>
+<text x="487.0" y="153.5" class="val mono" text-anchor="middle">16</text>
+<rect class="cell" x="517" y="140" width="54" height="19" rx="2" opacity="0.20"><title>dm_march, Full: 7.9 s</title></rect>
+<text x="544.0" y="153.5" class="val mono" text-anchor="middle">8</text>
+<text x="20" y="175.5" class="name mono">holosoma</text>
+<text x="132" y="175.5" class="name" style="fill: var(--walk); font-weight:600">Arm walk</text>
+<rect class="empty" x="232.5" y="162.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="289" y="162" width="54" height="19" rx="2" opacity="1.00"><title>holosoma, Port: 90.0 s</title></rect>
+<text x="316.0" y="175.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="346" y="162" width="54" height="19" rx="2" opacity="1.00"><title>holosoma, Arms held: 90.0 s</title></rect>
+<text x="373.0" y="175.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="403" y="162" width="54" height="19" rx="2" opacity="0.19"><title>holosoma, Arm walk: 7.0 s</title></rect>
+<text x="430.0" y="175.5" class="val mono" text-anchor="middle">7</text>
+<rect class="cell" x="460" y="162" width="54" height="19" rx="2" opacity="0.19"><title>holosoma, Punches: 6.8 s</title></rect>
+<text x="487.0" y="175.5" class="val mono" text-anchor="middle">7</text>
+<rect class="cell" x="517" y="162" width="54" height="19" rx="2" opacity="0.19"><title>holosoma, Full: 6.8 s</title></rect>
+<text x="544.0" y="175.5" class="val mono" text-anchor="middle">7</text>
+<text x="20" y="197.5" class="name mono">huru</text>
+<text x="132" y="197.5" class="name" style="fill: var(--walk); font-weight:600">Arm walk</text>
+<rect class="empty" x="232.5" y="184.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="289" y="184" width="54" height="19" rx="2" opacity="1.00"><title>huru, Port: 90.0 s</title></rect>
+<text x="316.0" y="197.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="346" y="184" width="54" height="19" rx="2" opacity="1.00"><title>huru, Arms held: 90.0 s</title></rect>
+<text x="373.0" y="197.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="403" y="184" width="54" height="19" rx="2" opacity="0.21"><title>huru, Arm walk: 9.3 s</title></rect>
+<text x="430.0" y="197.5" class="val mono" text-anchor="middle">9</text>
+<rect class="cell" x="460" y="184" width="54" height="19" rx="2" opacity="0.18"><title>huru, Punches: 6.5 s</title></rect>
+<text x="487.0" y="197.5" class="val mono" text-anchor="middle">6</text>
+<rect class="cell" x="517" y="184" width="54" height="19" rx="2" opacity="0.18"><title>huru, Full: 6.5 s</title></rect>
+<text x="544.0" y="197.5" class="val mono" text-anchor="middle">6</text>
+<text x="20" y="219.5" class="name mono">rl_gym</text>
+<text x="132" y="219.5" class="name" style="fill: var(--walk); font-weight:600">Arm walk</text>
+<rect class="cell" x="232" y="206" width="54" height="19" rx="2" opacity="1.00"><title>rl_gym, Authors&#x27;: 90.0 s</title></rect>
+<text x="259.0" y="219.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="289" y="206" width="54" height="19" rx="2" opacity="0.88"><title>rl_gym, Port: 78.2 s</title></rect>
+<text x="316.0" y="219.5" class="val mono" text-anchor="middle" style="fill:#ffffff">78</text>
+<rect class="empty" x="346.5" y="206.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="403" y="206" width="54" height="19" rx="2" opacity="0.34"><title>rl_gym, Arm walk: 22.4 s</title></rect>
+<text x="430.0" y="219.5" class="val mono" text-anchor="middle">22</text>
+<rect class="cell" x="460" y="206" width="54" height="19" rx="2" opacity="0.22"><title>rl_gym, Punches: 9.8 s</title></rect>
+<text x="487.0" y="219.5" class="val mono" text-anchor="middle">10</text>
+<rect class="cell" x="517" y="206" width="54" height="19" rx="2" opacity="0.22"><title>rl_gym, Full: 9.8 s</title></rect>
+<text x="544.0" y="219.5" class="val mono" text-anchor="middle">10</text>
+<text x="20" y="241.5" class="name mono">rl_lab</text>
+<text x="132" y="241.5" class="name" style="fill: var(--walk); font-weight:600">Arm walk</text>
+<rect class="empty" x="232.5" y="228.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="289" y="228" width="54" height="19" rx="2" opacity="0.99"><title>rl_lab, Port: 89.3 s</title></rect>
+<text x="316.0" y="241.5" class="val mono" text-anchor="middle" style="fill:#ffffff">89</text>
+<rect class="cell" x="346" y="228" width="54" height="19" rx="2" opacity="1.00"><title>rl_lab, Arms held: 90.0 s</title></rect>
+<text x="373.0" y="241.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="403" y="228" width="54" height="19" rx="2" opacity="0.23"><title>rl_lab, Arm walk: 11.4 s</title></rect>
+<text x="430.0" y="241.5" class="val mono" text-anchor="middle">11</text>
+<rect class="cell" x="460" y="228" width="54" height="19" rx="2" opacity="0.22"><title>rl_lab, Punches: 9.9 s</title></rect>
+<text x="487.0" y="241.5" class="val mono" text-anchor="middle">10</text>
+<rect class="cell" x="517" y="228" width="54" height="19" rx="2" opacity="0.40"><title>rl_lab, Full: 28.2 s</title></rect>
+<text x="544.0" y="241.5" class="val mono" text-anchor="middle">28</text>
+<text x="20" y="263.5" class="name mono">rl_mjlab</text>
+<text x="132" y="263.5" class="name" style="fill: var(--walk); font-weight:600">Arm walk</text>
+<rect class="empty" x="232.5" y="250.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="289" y="250" width="54" height="19" rx="2" opacity="1.00"><title>rl_mjlab, Port: 90.0 s</title></rect>
+<text x="316.0" y="263.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="346" y="250" width="54" height="19" rx="2" opacity="1.00"><title>rl_mjlab, Arms held: 90.0 s</title></rect>
+<text x="373.0" y="263.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="403" y="250" width="54" height="19" rx="2" opacity="0.18"><title>rl_mjlab, Arm walk: 5.8 s</title></rect>
+<text x="430.0" y="263.5" class="val mono" text-anchor="middle">6</text>
+<rect class="cell" x="460" y="250" width="54" height="19" rx="2" opacity="0.16"><title>rl_mjlab, Punches: 4.5 s</title></rect>
+<text x="487.0" y="263.5" class="val mono" text-anchor="middle">4</text>
+<rect class="cell" x="517" y="250" width="54" height="19" rx="2" opacity="0.16"><title>rl_mjlab, Full: 4.5 s</title></rect>
+<text x="544.0" y="263.5" class="val mono" text-anchor="middle">4</text>
+<text x="20" y="285.5" class="name mono">robomimic</text>
+<text x="132" y="285.5" class="name" style="fill: var(--walk); font-weight:600">Arm walk</text>
+<rect class="empty" x="232.5" y="272.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="289" y="272" width="54" height="19" rx="2" opacity="1.00"><title>robomimic, Port: 90.0 s</title></rect>
+<text x="316.0" y="285.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="346" y="272" width="54" height="19" rx="2" opacity="1.00"><title>robomimic, Arms held: 90.0 s</title></rect>
+<text x="373.0" y="285.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="403" y="272" width="54" height="19" rx="2" opacity="0.17"><title>robomimic, Arm walk: 5.0 s</title></rect>
+<text x="430.0" y="285.5" class="val mono" text-anchor="middle">5</text>
+<rect class="cell" x="460" y="272" width="54" height="19" rx="2" opacity="0.17"><title>robomimic, Punches: 5.4 s</title></rect>
+<text x="487.0" y="285.5" class="val mono" text-anchor="middle">5</text>
+<rect class="cell" x="517" y="272" width="54" height="19" rx="2" opacity="0.63"><title>robomimic, Full: 52.5 s</title></rect>
+<text x="544.0" y="285.5" class="val mono" text-anchor="middle" style="fill:#ffffff">52</text>
+<text x="20" y="307.5" class="name mono">wty_cpp</text>
+<text x="132" y="307.5" class="name" style="fill: var(--walk); font-weight:600">Arm walk</text>
+<rect class="cell" x="232" y="294" width="54" height="19" rx="2" opacity="1.00"><title>wty_cpp, Authors&#x27;: 90.0 s</title></rect>
+<text x="259.0" y="307.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="289" y="294" width="54" height="19" rx="2" opacity="1.00"><title>wty_cpp, Port: 90.0 s</title></rect>
+<text x="316.0" y="307.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="346" y="294" width="54" height="19" rx="2" opacity="1.00"><title>wty_cpp, Arms held: 90.0 s</title></rect>
+<text x="373.0" y="307.5" class="val mono" text-anchor="middle" style="fill:#ffffff">90</text>
+<rect class="cell" x="403" y="294" width="54" height="19" rx="2" opacity="0.28"><title>wty_cpp, Arm walk: 15.9 s</title></rect>
+<text x="430.0" y="307.5" class="val mono" text-anchor="middle">16</text>
+<rect class="cell" x="460" y="294" width="54" height="19" rx="2" opacity="0.25"><title>wty_cpp, Punches: 13.6 s</title></rect>
+<text x="487.0" y="307.5" class="val mono" text-anchor="middle">14</text>
+<rect class="cell" x="517" y="294" width="54" height="19" rx="2" opacity="0.34"><title>wty_cpp, Full: 22.5 s</title></rect>
+<text x="544.0" y="307.5" class="val mono" text-anchor="middle">22</text>
+<text x="20" y="329.5" class="name mono">dm_agile</text>
+<text x="132" y="329.5" class="name" style="fill: var(--policy); font-weight:600">Policy</text>
+<rect class="cell" x="232" y="316" width="54" height="19" rx="2" opacity="0.16"><title>dm_agile, Authors&#x27;: 4.6 s</title></rect>
+<text x="259.0" y="329.5" class="val mono" text-anchor="middle">5</text>
+<rect class="cell" x="289" y="316" width="54" height="19" rx="2" opacity="0.16"><title>dm_agile, Port: 4.5 s</title></rect>
+<text x="316.0" y="329.5" class="val mono" text-anchor="middle">4</text>
+<rect class="cell" x="346" y="316" width="54" height="19" rx="2" opacity="0.14"><title>dm_agile, Arms held: 1.7 s</title></rect>
+<text x="373.0" y="329.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="403" y="316" width="54" height="19" rx="2" opacity="0.14"><title>dm_agile, Arm walk: 1.7 s</title></rect>
+<text x="430.0" y="329.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="460" y="316" width="54" height="19" rx="2" opacity="0.13"><title>dm_agile, Punches: 1.4 s</title></rect>
+<text x="487.0" y="329.5" class="val mono" text-anchor="middle">1</text>
+<rect class="cell" x="517" y="316" width="54" height="19" rx="2" opacity="0.14"><title>dm_agile, Full: 2.1 s</title></rect>
+<text x="544.0" y="329.5" class="val mono" text-anchor="middle">2</text>
+<text x="20" y="351.5" class="name mono">g1_gym</text>
+<text x="132" y="351.5" class="name" style="fill: var(--policy); font-weight:600">Policy</text>
+<rect class="cell" x="232" y="338" width="54" height="19" rx="2" opacity="0.17"><title>g1_gym, Authors&#x27;: 4.7 s</title></rect>
+<text x="259.0" y="351.5" class="val mono" text-anchor="middle">5</text>
+<rect class="cell" x="289" y="338" width="54" height="19" rx="2" opacity="0.19"><title>g1_gym, Port: 7.0 s</title></rect>
+<text x="316.0" y="351.5" class="val mono" text-anchor="middle">7</text>
+<rect class="cell" x="346" y="338" width="54" height="19" rx="2" opacity="0.15"><title>g1_gym, Arms held: 3.5 s</title></rect>
+<text x="373.0" y="351.5" class="val mono" text-anchor="middle">4</text>
+<rect class="cell" x="403" y="338" width="54" height="19" rx="2" opacity="0.14"><title>g1_gym, Arm walk: 1.6 s</title></rect>
+<text x="430.0" y="351.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="460" y="338" width="54" height="19" rx="2" opacity="0.14"><title>g1_gym, Punches: 2.1 s</title></rect>
+<text x="487.0" y="351.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="517" y="338" width="54" height="19" rx="2" opacity="0.14"><title>g1_gym, Full: 2.1 s</title></rect>
+<text x="544.0" y="351.5" class="val mono" text-anchor="middle">2</text>
+<text x="20" y="373.5" class="name mono">stepdown</text>
+<text x="132" y="373.5" class="name" style="fill: var(--policy); font-weight:600">Policy</text>
+<rect class="cell" x="232" y="360" width="54" height="19" rx="2" opacity="0.14"><title>stepdown, Authors&#x27;: 1.6 s</title></rect>
+<text x="259.0" y="373.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="289" y="360" width="54" height="19" rx="2" opacity="0.13"><title>stepdown, Port: 1.5 s</title></rect>
+<text x="316.0" y="373.5" class="val mono" text-anchor="middle">2</text>
+<rect class="empty" x="346.5" y="360.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="403" y="360" width="54" height="19" rx="2" opacity="0.13"><title>stepdown, Arm walk: 1.3 s</title></rect>
+<text x="430.0" y="373.5" class="val mono" text-anchor="middle">1</text>
+<rect class="cell" x="460" y="360" width="54" height="19" rx="2" opacity="0.13"><title>stepdown, Punches: 1.5 s</title></rect>
+<text x="487.0" y="373.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="517" y="360" width="54" height="19" rx="2" opacity="0.13"><title>stepdown, Full: 1.5 s</title></rect>
+<text x="544.0" y="373.5" class="val mono" text-anchor="middle">2</text>
+<text x="20" y="395.5" class="name mono">nanog1</text>
+<text x="132" y="395.5" class="name" style="fill: var(--unclear); font-weight:600">Unclear</text>
+<rect class="empty" x="232.5" y="382.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="289" y="382" width="54" height="19" rx="2" opacity="0.16"><title>nanog1, Port: 4.4 s</title></rect>
+<text x="316.0" y="395.5" class="val mono" text-anchor="middle">4</text>
+<rect class="cell" x="346" y="382" width="54" height="19" rx="2" opacity="0.17"><title>nanog1, Arms held: 5.2 s</title></rect>
+<text x="373.0" y="395.5" class="val mono" text-anchor="middle">5</text>
+<rect class="cell" x="403" y="382" width="54" height="19" rx="2" opacity="0.14"><title>nanog1, Arm walk: 2.3 s</title></rect>
+<text x="430.0" y="395.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="460" y="382" width="54" height="19" rx="2" opacity="0.15"><title>nanog1, Punches: 2.7 s</title></rect>
+<text x="487.0" y="395.5" class="val mono" text-anchor="middle">3</text>
+<rect class="cell" x="517" y="382" width="54" height="19" rx="2" opacity="0.15"><title>nanog1, Full: 2.8 s</title></rect>
+<text x="544.0" y="395.5" class="val mono" text-anchor="middle">3</text>
+<text x="20" y="417.5" class="name mono">wcompton</text>
+<text x="132" y="417.5" class="name" style="fill: var(--unclear); font-weight:600">Unclear</text>
+<rect class="empty" x="232.5" y="404.5" width="53" height="18" rx="2"/>
+<rect class="cell" x="289" y="404" width="54" height="19" rx="2" opacity="0.15"><title>wcompton, Port: 2.6 s</title></rect>
+<text x="316.0" y="417.5" class="val mono" text-anchor="middle">3</text>
+<rect class="cell" x="346" y="404" width="54" height="19" rx="2" opacity="0.15"><title>wcompton, Arms held: 2.8 s</title></rect>
+<text x="373.0" y="417.5" class="val mono" text-anchor="middle">3</text>
+<rect class="cell" x="403" y="404" width="54" height="19" rx="2" opacity="0.14"><title>wcompton, Arm walk: 1.9 s</title></rect>
+<text x="430.0" y="417.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="460" y="404" width="54" height="19" rx="2" opacity="0.14"><title>wcompton, Punches: 1.7 s</title></rect>
+<text x="487.0" y="417.5" class="val mono" text-anchor="middle">2</text>
+<rect class="cell" x="517" y="404" width="54" height="19" rx="2" opacity="0.14"><title>wcompton, Full: 1.7 s</title></rect>
+<text x="544.0" y="417.5" class="val mono" text-anchor="middle">2</text>
+<text x="20" y="450" class="lab">Dashed: stage not run (no upstream config read, or the policy lists no arms). Full results: dundysm.github.io/gaitkeeper/results</text>
+<text x="610" y="30" class="h">Agreement with the benchmark</text>
+<text x="610" y="68" class="big">0.94</text><text x="674" y="68" class="lab">Pearson</text>
+<text x="744" y="68" class="big">0.89</text><text x="808" y="68" class="lab">Spearman</text>
+<line class="ax" x1="640" y1="326" x2="876" y2="326"/><line class="ax" x1="640" y1="96" x2="640" y2="326"/>
+<line class="diag" x1="640" y1="326" x2="876" y2="96"/>
+<text x="640.0" y="341" class="lab mono" text-anchor="middle">0</text>
+<text x="634" y="330.0" class="lab mono" text-anchor="end">0</text>
+<text x="718.6666666666666" y="341" class="lab mono" text-anchor="middle">30</text>
+<text x="634" y="253.33333333333334" class="lab mono" text-anchor="end">30</text>
+<text x="797.3333333333334" y="341" class="lab mono" text-anchor="middle">60</text>
+<text x="634" y="176.66666666666669" class="lab mono" text-anchor="end">60</text>
+<text x="876.0" y="341" class="lab mono" text-anchor="middle">90</text>
+<text x="634" y="100.00000000000003" class="lab mono" text-anchor="end">90</text>
+<text x="758.0" y="358" class="lab" text-anchor="middle">gaitkeeper: port, full benchmark (s)</text>
+<text transform="translate(608 211.0) rotate(-90)" class="lab" text-anchor="middle">benchmark, MuJoCo (s)</text>
+<circle class="pt" cx="649.4" cy="316.4" r="4.5"><title>schoi: 3.6 s here, 3.8 s in the benchmark</title></circle>
+<circle class="pt" cx="644.2" cy="321.4" r="4.5"><title>clobot: 1.6 s here, 1.8 s in the benchmark</title></circle>
+<circle class="pt" cx="667.0" cy="316.0" r="4.5"><title>legged_rl_lab: 10.3 s here, 3.9 s in the benchmark</title></circle>
+<circle class="pt" cx="660.7" cy="309.6" r="4.5"><title>dm_march: 7.9 s here, 6.4 s in the benchmark</title></circle>
+<circle class="pt" cx="657.8" cy="311.2" r="4.5"><title>holosoma: 6.8 s here, 5.8 s in the benchmark</title></circle>
+<circle class="pt" cx="657.0" cy="306.1" r="4.5"><title>huru: 6.5 s here, 7.8 s in the benchmark</title></circle>
+<circle class="pt" cx="665.7" cy="275.6" r="4.5"><title>rl_gym: 9.8 s here, 19.7 s in the benchmark</title></circle>
+<circle class="pt" cx="713.9" cy="261.2" r="4.5"><title>rl_lab: 28.2 s here, 25.4 s in the benchmark</title></circle>
+<circle class="pt" cx="651.8" cy="311.8" r="4.5"><title>rl_mjlab: 4.5 s here, 5.6 s in the benchmark</title></circle>
+<circle class="pt" cx="777.7" cy="210.6" r="4.5"><title>robomimic: 52.5 s here, 45.1 s in the benchmark</title></circle>
+<circle class="pt" cx="699.0" cy="238.9" r="4.5"><title>wty_cpp: 22.5 s here, 34.1 s in the benchmark</title></circle>
+<circle class="pt" cx="645.5" cy="312.7" r="4.5"><title>dm_agile: 2.1 s here, 5.2 s in the benchmark</title></circle>
+<circle class="pt" cx="645.5" cy="319.7" r="4.5"><title>g1_gym: 2.1 s here, 2.5 s in the benchmark</title></circle>
+<circle class="pt" cx="643.9" cy="320.7" r="4.5"><title>stepdown: 1.5 s here, 2.1 s in the benchmark</title></circle>
+<circle class="pt" cx="647.3" cy="320.6" r="4.5"><title>nanog1: 2.8 s here, 2.1 s in the benchmark</title></circle>
+<circle class="pt" cx="644.5" cy="320.8" r="4.5"><title>wcompton: 1.7 s here, 2.0 s in the benchmark</title></circle>
+</svg>

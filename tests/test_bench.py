@@ -1,7 +1,14 @@
 import json
 import math
+import textwrap
 
-from gaitkeeper.bench import BenchReport, attribute
+from gaitkeeper.bench import (
+    FINDING_WIDTH,
+    BenchReport,
+    attribute,
+    doctor_markdown,
+    step_losses,
+)
 
 
 def _st(surv, complete=0, n=2):
@@ -41,6 +48,143 @@ def test_report_gate_and_formats():
     json.dumps(rep.to_json())
     rep.stages["port"] = _st(20, 2)
     assert rep.gate()
+
+
+def test_doctor_markdown_has_each_section_and_the_verdict_last():
+    rows = [
+        (
+            "arms its own",
+            {
+                "mean_survival_s": 20.0,
+                "seconds": 20.0,
+                "complete": 2,
+                "runs": [1, 2],
+                "pos_err_cm": 12.0,
+            },
+        ),
+        (
+            "with punches",
+            {
+                "mean_survival_s": 5.0,
+                "seconds": 20.0,
+                "complete": 0,
+                "runs": [1, 2],
+                "pos_err_cm": math.nan,
+            },
+        ),
+    ]
+    md = doctor_markdown(
+        "p",
+        20.0,
+        ["policy_io.obs.history"],
+        ["vx +0.40 m/s"],
+        ["yaw stops responding"],
+        rows,
+        "It falls on the tour with nothing added.",
+    )
+    assert md.startswith("# gaitkeeper doctor: p") and "Evidence L1" in md
+    assert "- `policy_io.obs.history`" in md
+    assert "DEAD ZONE  vx +0.40 m/s" in md and "Finding    yaw stops responding" in md
+    assert "| Setting | Mean survival (s) | Complete | Pos err (cm) |" in md
+    assert "| with punches | 5.0 | 0/2 | – |" in md  # nan reads as a dash, as in bench
+    assert "## Summary" in md and "It falls on the tour with nothing added." in md
+    order = [
+        md.index(s)
+        for s in ["## Contract", "## Command response", "## Waypoint tour", "## Summary"]
+    ]
+    assert order == sorted(order)
+    # The summary says the answer rests on defaults, so it is not read on its own.
+    assert "1 field(s) no file states, filled from defaults for this run" in md
+    # And it repeats the tour steps that cost survival.
+    assert "With punches costs it 15 s (20.0 to 5.0 s)." in md
+
+
+def test_doctor_markdown_names_the_policy_file_and_wraps_the_terminal():
+    rows = [
+        (
+            "arms its own",
+            {
+                "mean_survival_s": 20.0,
+                "seconds": 20.0,
+                "complete": 2,
+                "runs": [1, 2],
+                "pos_err_cm": 12.0,
+            },
+        ),
+        (
+            "with punches",
+            {
+                "mean_survival_s": 5.0,
+                "seconds": 20.0,
+                "complete": 0,
+                "runs": [1, 2],
+                "pos_err_cm": math.nan,
+            },
+        ),
+    ]
+    md = doctor_markdown(
+        "my_policy",
+        20.0,
+        [],
+        [],
+        [],
+        rows,
+        "It falls on the tour with nothing added.",
+        source="policies/my_policy/policy.yaml",
+    )
+    # A report is attached to a PR, so the heading and the policy line name the file --
+    # the file name, not the directory it happens to sit in.
+    assert md.startswith("# gaitkeeper doctor: my_policy")
+    assert "Policy: `policy.yaml`" in md
+    assert "policies/" not in md, "the report must not carry the local directory"
+
+    sentence = step_losses(rows)[0][1]
+    assert sentence == "With punches costs it 15 s (20.0 to 5.0 s)."
+    # Wrapped for a terminal, every line fits the width the project reports to.
+    assert all(len(line) <= FINDING_WIDTH for line in textwrap.wrap(sentence, FINDING_WIDTH))
+
+
+def test_report_source_is_the_file_name_not_the_path():
+    """Reports get pasted into public issues; the path is nobody's business."""
+    import argparse
+
+    from gaitkeeper.cli import _report_source
+
+    assert _report_source(argparse.Namespace(policy="a/b/policy.yaml", onnx=None)) == "policy.yaml"
+    assert _report_source(argparse.Namespace(policy="C:\\x\\p.yaml", onnx=None)) == "p.yaml"
+    # --onnx still names itself, so the two paths cannot be confused.
+    assert (
+        _report_source(argparse.Namespace(policy=None, onnx="m/onnx/model.onnx"))
+        == "model.onnx (onnx)"
+    )
+    assert _report_source(argparse.Namespace(policy=None, onnx=None)) == "policy"
+
+
+def test_step_losses_ignores_a_stage_under_the_notable_threshold():
+    rows = [
+        ("a", {"mean_survival_s": 20.0, "complete": 1, "runs": [1], "pos_err_cm": 0.0}),
+        ("b", {"mean_survival_s": 16.0, "complete": 1, "runs": [1], "pos_err_cm": 0.0}),
+    ]
+    # 4 s is under NOTABLE_S (5 s), so nothing is called out.
+    assert step_losses(rows) == []
+
+
+def test_doctor_markdown_says_so_when_there_is_nothing_to_report():
+    rows = [
+        (
+            "arms its own",
+            {
+                "mean_survival_s": 20.0,
+                "seconds": 20.0,
+                "complete": 3,
+                "runs": [1, 2, 3],
+                "pos_err_cm": 9.0,
+            },
+        )
+    ]
+    md = doctor_markdown("p", 20.0, [], [], [], rows, "It survives the tour.")
+    assert "Every field the runner needs comes from a file." in md
+    assert "Tracks the commands it was swept with." in md
 
 
 def test_bench_command_runs_the_ladder_on_the_g1(tmp_path, capsys):

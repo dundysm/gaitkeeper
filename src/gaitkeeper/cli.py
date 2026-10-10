@@ -10,9 +10,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import textwrap
 from pathlib import Path
 from typing import NoReturn
 
+from .bench import FINDING_WIDTH
 from .contract import Contract
 from .env import env
 from .trace import Trace
@@ -537,12 +539,32 @@ def _adapter_one(args: argparse.Namespace, variant: str | None) -> int:
     return 5
 
 
+def _wrap(sentence: str) -> list[str]:
+    """The sentences doctor prints, wrapped the width it always wrapped at."""
+    return textwrap.wrap(sentence, width=FINDING_WIDTH) or [""]
+
+
+def _report_source(args: argparse.Namespace) -> str:
+    """Name the file the report is about, by file name only.
+
+    These reports get pasted into public issues, so the directory the policy happens to
+    sit in is nobody's business and is not what identifies the run; the file name is.
+    ``--onnx`` names itself so the two paths cannot be confused in a report.
+    """
+    path = getattr(args, "policy", None) or getattr(args, "onnx", None)
+    if not path:
+        return "policy"
+    name = Path(path).name
+    return f"{name} (onnx)" if getattr(args, "onnx", None) else name
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Your policy in a MuJoCo scene: what the contract leaves open, where the policy does
     not respond to commands, and whether it survives a waypoint tour."""
     import math
 
     from .behavior import contract_header
+    from .bench import step_losses
     from .envelope import sweep
     from .tour import BENCH_ARMS, TourOptions, run_tour
 
@@ -600,28 +622,45 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     own = rows[0][1]
     print("\nSummary")
     ok = own["complete"] == len(own["runs"]) and not dead
+    # The same sentences go to the terminal and into the report, so the two cannot drift.
     if own["mean_survival_s"] < own["seconds"] - 5:
-        print(
-            "  It falls on the tour with nothing added. Check the contract gaps above first, then"
-        )
-        print(
-            "  the policy itself: gaitkeeper bench --upstream <the authors' config> separates the two."
+        verdict = (
+            "It falls on the tour with nothing added. Check the contract gaps above first, then "
+            "the policy itself: gaitkeeper bench --upstream <the authors' config> separates the two."
         )
     elif dead:
-        print(
-            "  It survives but ignores some commands (dead zones above): a harness that sends small"
+        verdict = (
+            "It survives but ignores some commands (dead zones above): a harness that sends small "
+            "commands will see it stand still. That is the policy, if the contract is right."
         )
-        print("  commands will see it stand still. That is the policy, if the contract is right.")
     else:
-        print("  It survives the tour and tracks its commands in this runner.")
-    for (_, a), (label, b) in zip(rows, rows[1:]):
-        if b["mean_survival_s"] < a["mean_survival_s"] - 5:
-            print(
-                f"  {label.capitalize()} costs it {a['mean_survival_s'] - b['mean_survival_s']:.0f} s "
-                f"({a['mean_survival_s']:.1f} to {b['mean_survival_s']:.1f} s)."
+        verdict = "It survives the tour and tracks its commands in this runner."
+    for line in _wrap(verdict):
+        print(f"  {line}")
+    losses = step_losses(rows)
+    for _, sentence in sorted(losses, reverse=True):
+        for line in _wrap(sentence):
+            print(f"  {line}")
+    for line in _wrap(
+        "Evidence L1: this runner, this model, these assumptions. For a cause, record a golden "
+        "trace in the training simulator and run gaitkeeper verify (README: How it decides)."
+    ):
+        print(line)
+    if args.md:
+        from .bench import doctor_markdown
+
+        Path(args.md).write_text(
+            doctor_markdown(
+                args.policy or args.onnx or "policy",
+                own["seconds"],
+                gaps,
+                dead,
+                env.findings,
+                rows,
+                verdict,
+                source=_report_source(args),
             )
-    print("Evidence L1: this runner, this model, these assumptions. For a cause, record a golden")
-    print("trace in the training simulator and run gaitkeeper verify (README: How it decides).")
+        )
     if args.json:
         Path(args.json).write_text(
             json.dumps(
@@ -631,6 +670,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                     "dead_zones": dead,
                     "findings": env.findings,
                     "tour": {k: v for k, v in rows},
+                    # The verdict and the exit code together: --json alone left a caller
+                    # to read the code out of stdout, which a pipe cannot see.
+                    "summary": verdict,
+                    "ok": ok,
                 },
                 indent=1,
                 default=str,
@@ -1245,6 +1288,7 @@ def main(argv: list[str] | None = None) -> int:
         "--seeds", type=int, default=3, help="random seeds per setting (default %(default)s)"
     )
     p.add_argument("--quick", action="store_true", help="the tour without arm motion or punches")
+    p.add_argument("--md", help="write the report as markdown")
     p.add_argument(
         "--workers", type=int, help="parallel worker processes (default: one per CPU, up to 8)"
     )

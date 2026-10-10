@@ -110,6 +110,10 @@ class RunConfig:
     record: bool = False
     contacts: bool = False  # log which bodies touch the world at every physics step
     physics: bool = False  # with record: log the state before every physics step (p/ keys)
+    # Closed-loop command: called each policy step with (time, free-joint qpos) and returns
+    # (vx, vy, wz); overrides command and schedule. If it has report(fell_at), the result
+    # carries that as ``task`` (see gaitkeeper.tour).
+    command_source: Any = None
 
 
 def pool_context():
@@ -256,6 +260,7 @@ class RunResult:
     contacts: np.ndarray | None = None  # (physics steps, bodies) touching a world geom
     body_names: list[str] | None = None
     vel: np.ndarray | None = None  # (policy steps, 3) body vx, vy and yaw rate after each step
+    task: dict[str, Any] | None = None  # the command source's report, when it has one
 
     @property
     def survived(self) -> bool:
@@ -657,6 +662,8 @@ class Runner:
                 for ts, c_ in cfg.schedule:
                     if time + 1e-9 >= ts:
                         cmd = np.array(c_, dtype=float)
+            if cfg.command_source is not None:
+                cmd = np.asarray(cfg.command_source(time, d.qpos[q0 : q0 + 7].copy()), float)
             quat = d.qpos[q0 + 3 : q0 + 7].copy()
             w_b = d.qvel[v0 + 3 : v0 + 6].copy()
             qj = d.qpos[b.qadr].copy()
@@ -816,6 +823,8 @@ class Runner:
             dadr=b.dadr.copy(),
             vel=np.c_[vx_h, vy_h, wz_h] if vx_h else np.zeros((0, 3)),
         )
+        if cfg.command_source is not None and hasattr(cfg.command_source, "report"):
+            res.task = cfg.command_source.report(fell_at)
         if contacts is not None:
             res.contacts = np.array(contacts, dtype=bool).reshape(len(contacts), m.nbody)
             res.body_names = [m.body(i).name for i in range(m.nbody)]

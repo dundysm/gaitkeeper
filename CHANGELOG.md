@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+* `gaitkeeper tour`: a closed-loop waypoint tour (RunConfig.command_source,
+  gaitkeeper.tour). By default the tour of rhoyn/teleop-walking-benchmark, with its
+  random arm walk (`--arms walk`) and punches (`--punches benchmark`) as options; over 11
+  of its ported policies, survival matches the benchmark's (Pearson 0.94).
+* `base_lin_vel` observation term; `--set PATH=VALUE` for contract fields no file states.
+* `control.unlisted`: hold actuated joints a policy does not list (a legs-only policy's
+  arms and waist) at a given pose and gains. `gait_phase_legs`: ClOBOT's two-leg clock.
 * The Isaac Lab recorder (`gaitkeeper.recorders.isaaclab`, `tools/record_isaaclab.py`):
   `doctor`, `check`, `contract` and `record` for unitree_rl_lab's G1 velocity policy. Run
   on a GPU once (STATUS.md). Fixes from that run: the app launcher is kept alive, output is

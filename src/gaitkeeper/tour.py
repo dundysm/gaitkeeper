@@ -6,8 +6,8 @@ does: a proportional controller on the position and heading error in the body fr
 hysteresis on "reached", then clamped to the policy's command limits. It records the error
 at the end of each waypoint's time slot.
 
-``benchmark_tour`` builds the tour, the arm motion and the punches of rhoyn's
-teleop-walking-benchmark (main.cpp): 18 waypoints, 5 s each, in a 0.75 m disc around
+``bench_waypoints``, ``bench_arm_walk`` and ``bench_punches`` build the tour, the arm motion
+and the punches of rhoyn's teleop-walking-benchmark (main.cpp): 18 waypoints, 5 s each, in a 0.75 m disc around
 (0.3, 0); arms walking at random around STANCE; a punch on a random link every 5 s whose
 force ceiling ramps from 1/3 to 1 of 500 N over 60 s. The draws follow the same
 distributions with numpy's generator, not the benchmark's own random stream, so a seed here
@@ -208,3 +208,132 @@ def bench_arms_external(
 ) -> External:
     walk = bench_arm_walk(seed, seconds, limits)
     return External(list(walk), drive="trajectory", pose=walk, kp=kp, kd=kd, obs=obs)
+
+
+# -- running a tour ------------------------------------------------------------------------
+
+BENCH_ARMS = BENCH_ARM_LEFT + BENCH_ARM_RIGHT
+_WN = 10 * 2.0 * math.pi  # the benchmark's holding servo: 10 Hz, damping ratio 2
+_ZETA = 2.0
+
+
+def armature_gains(m: Any, joints: list[str]) -> tuple[dict[str, float], dict[str, float]]:
+    """The benchmark's gains for joints it holds: kp = armature * wn^2, kd = 2 zeta armature wn."""
+    import mujoco
+
+    kp, kd = {}, {}
+    for j in joints:
+        arm = float(
+            m.dof_armature[m.jnt_dofadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, j)]]
+        )
+        kp[j], kd[j] = arm * _WN * _WN, 2 * _ZETA * arm * _WN
+    return kp, kd
+
+
+@dataclass
+class TourOptions:
+    waypoints: list[tuple[float, float, float]] | None = None  # None: the benchmark's draws
+    point_s: float = BENCH_POINT_S
+    arms: str = "policy"  # "policy", "hold" (at STANCE) or "walk" (the benchmark's random walk)
+    arms_obs: str = "real"  # how the policy sees arms it does not drive
+    hold_gains: str = "armature"  # "armature" (the benchmark's) or "policy" (the contract's)
+    punches: str = "none"  # "none" or "benchmark"
+    backend: str | None = None
+
+
+def _tour_job(job: tuple) -> dict[str, Any]:
+    import mujoco
+
+    from .contract import Contract
+    from .policy import OnnxPolicy
+    from .runner import RunConfig, Runner
+
+    contract_d, mjcf, policy_path, seed, o = job
+    c = Contract.from_dict(contract_d)
+    rec = c.get("policy_io.graph.recurrent", None) or None
+    r = Runner(c, mjcf, OnnxPolicy(policy_path, rec))
+    m = mujoco.MjModel.from_xml_path(str(mjcf))
+    lim = c.get("policy_io.commands.base_velocity.limit", None) or {}
+    wps = o.waypoints if o.waypoints is not None else bench_waypoints(seed)
+    tour = WaypointTour(
+        list(wps),
+        point_s=o.point_s,
+        vx=tuple(lim.get("vx", (-0.5, 1.0))),
+        vy_abs=max(abs(x) for x in lim.get("vy", (-0.3, 0.3))),
+        wz_abs=max(abs(x) for x in lim.get("wz", (-0.2, 0.2))),
+    )
+    seconds = len(wps) * o.point_s
+    ext = None
+    if o.arms != "policy":
+        arms = [j for j in r.names if j in BENCH_ARMS]
+        if o.hold_gains == "armature":
+            kp, kd = armature_gains(m, arms)
+        else:
+            kp = {j: float(r.kp[r.names.index(j)]) for j in arms}
+            kd = {j: float(r.kd[r.names.index(j)]) for j in arms}
+        stance = dict(zip(BENCH_ARM_LEFT, BENCH_ARM_STANCE_LEFT))
+        stance.update(
+            {
+                rj: BENCH_ARM_MIRROR[i] * BENCH_ARM_STANCE_LEFT[i]
+                for i, rj in enumerate(BENCH_ARM_RIGHT)
+            }
+        )
+        if o.arms == "walk":
+            limits = {
+                j: tuple(m.jnt_range[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, j)])
+                for j in BENCH_ARMS
+            }
+            walk = bench_arm_walk(seed, seconds, limits)
+            ext = [External(arms, "trajectory", {j: walk[j] for j in arms}, kp, kd, o.arms_obs)]
+        else:
+            ext = [External(arms, "hold", {j: stance[j] for j in arms}, kp, kd, o.arms_obs)]
+    pushes = []
+    if o.punches == "benchmark":
+        bodies = [m.body(m.jnt_bodyid[m.actuator_trnid[a, 0]]).name for a in range(m.nu)]
+        pushes = bench_punches(seed, bodies)
+    res = r.run(
+        RunConfig(
+            backend=o.backend,
+            seconds=seconds,
+            command_source=tour,
+            external=ext,
+            pushes=pushes,
+            seed=seed,
+        )
+    )
+    return {"seed": seed, **(res.task or {})}
+
+
+def run_tour(
+    contract: Any,
+    mjcf: str,
+    policy_path: str,
+    seeds: list[int],
+    options: TourOptions,
+    workers: int | None = None,
+) -> dict[str, Any]:
+    """Run the tour once per seed. Returns per-seed reports and their summary."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    from .runner import pool_context
+
+    jobs = [(contract.to_dict(), str(mjcf), str(policy_path), s, options) for s in seeds]
+    if workers and workers > 1 and len(jobs) > 1:
+        with ProcessPoolExecutor(workers, mp_context=pool_context()) as ex:
+            runs = list(ex.map(_tour_job, jobs))
+    else:
+        runs = [_tour_job(j) for j in jobs]
+    n_wp = len(options.waypoints) if options.waypoints is not None else BENCH_WAYPOINTS
+    full = n_wp * options.point_s
+    surv = [r["survival_s"] if r.get("survival_s") is not None else full for r in runs]
+    pos = [r["pos_err_cm"] for r in runs if not math.isnan(r.get("pos_err_cm", math.nan))]
+    yaw = [r["yaw_err_deg"] for r in runs if not math.isnan(r.get("yaw_err_deg", math.nan))]
+    return {
+        "runs": runs,
+        "seconds": full,
+        "mean_survival_s": float(np.mean(surv)),
+        "complete": sum(r.get("outcome") == "complete" for r in runs),
+        "pos_err_cm": float(np.mean(pos)) if pos else math.nan,
+        "yaw_err_deg": float(np.mean(yaw)) if yaw else math.nan,
+        "options": {k: v for k, v in options.__dict__.items() if k != "waypoints"},
+    }

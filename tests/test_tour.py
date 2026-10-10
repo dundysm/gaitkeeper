@@ -72,3 +72,25 @@ def test_runner_takes_a_closed_loop_command_and_reports_the_tour():
     res = r.run(RunConfig(seconds=3.0, command_source=tour))
     assert res.survived and res.dx > 0.5
     assert res.task["outcome"] == "complete" and res.task["targets"] == 1
+
+
+def test_tour_command_runs_waypoints_from_a_file_and_takes_the_arms(tmp_path, capsys):
+    from assets import UMJ_G1, URL_G1, need
+
+    need(UMJ_G1, URL_G1 / "deploy.yaml")
+    from gaitkeeper.cli import main
+
+    wp = tmp_path / "wp.yaml"
+    wp.write_text("waypoints:\n  - [0.3, 0.0, 0.0]\n  - [0.3, 0.2, 0.5]\n")
+    out = tmp_path / "t.json"
+    argv = ["tour", "--deploy", str(URL_G1 / "deploy.yaml"), "--onnx", str(URL_G1 / "policy.onnx")]
+    argv += ["--mjcf", str(UMJ_G1), "--waypoints", str(wp), "--point-s", "2", "--seeds", "1"]
+    argv += ["--arms", "walk", "--json", str(out)]
+    code = main(argv)
+    text = capsys.readouterr().out
+    assert "arms walk (gains armature" in text and "Mean survival" in text
+    import json
+
+    d = json.loads(out.read_text())
+    assert d["command"] == "tour" and len(d["runs"]) == 1 and d["seconds"] == 4.0
+    assert code in (0, 5)

@@ -116,6 +116,7 @@ traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
 | `verify <trace> --mjcf` | Plus D, the nominal closed loop and the model counterfactual | L2 for PHYSICS and POLICY_UNDER_TASK, L3 for PASS |
 | `residual` | D alone, plus parameter fits that stay out of the verdict | detection only |
 | `task` | A command schedule, held joints and punches, with no reference | L1 |
+| `tour` | A closed-loop waypoint tour; by default the teleop-walking-benchmark's, with its arm random walk and punches as options | L1 |
 | `run`, `check`, `envelope` | Closed loop, static and linearized checks, the command response map | L1 |
 | `infer` | Observation layout from a trace, abstaining when ambiguous | |
 | `deviation` | Deploy values against training values, per joint | |

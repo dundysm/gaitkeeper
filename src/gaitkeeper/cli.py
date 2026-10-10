@@ -336,6 +336,58 @@ def cmd_residual(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tour(args: argparse.Namespace) -> int:
+    import math
+
+    import yaml
+
+    from .behavior import contract_header
+    from .tour import TourOptions, run_tour
+
+    c = _contract(args)
+    path = args.policy or args.onnx
+    if not path:
+        sys.exit("give --policy (or --onnx)")
+    wps = None
+    if args.waypoints:
+        d = yaml.safe_load(Path(args.waypoints).read_text())
+        rows = d["waypoints"] if isinstance(d, dict) else d
+        wps = [(float(r[0]), float(r[1]), float(r[2]) if len(r) > 2 else 0.0) for r in rows]
+    opts = TourOptions(
+        waypoints=wps,
+        point_s=args.point_s,
+        arms=args.arms,
+        arms_obs=args.arms_obs,
+        hold_gains=args.hold_gains,
+        punches=args.punches,
+        backend=args.backend,
+    )
+    print(contract_header(c))
+    src = "the benchmark's draws per seed" if wps is None else f"{len(wps)} from {args.waypoints}"
+    print(
+        f"Tour: waypoints {src}, {args.point_s:g} s each; arms {args.arms}"
+        + (f" (gains {args.hold_gains}, observed {args.arms_obs})" if args.arms != "policy" else "")
+        + f"; punches {args.punches}"
+    )
+    out = run_tour(c, args.mjcf, path, list(range(args.seeds)), opts, args.workers)
+    for r in out["runs"]:
+        surv = "complete" if r["outcome"] == "complete" else f"fell at {r['survival_s']:.2f} s"
+        pos = "-" if math.isnan(r["pos_err_cm"]) else f"{r['pos_err_cm']:.0f} cm"
+        yaw = "-" if math.isnan(r["yaw_err_deg"]) else f"{r['yaw_err_deg']:.0f} deg"
+        print(
+            f"  seed {r['seed']:<3d} {surv:22s} {r['targets']:2d} waypoints scored, "
+            f"{r['reached']:2d} reached; error {pos}, {yaw}"
+        )
+    print(
+        f"Mean survival {out['mean_survival_s']:.1f} of {out['seconds']:.0f} s; "
+        f"complete {out['complete']} of {len(out['runs'])}"
+    )
+    print("Evidence L1: this runner, this model, these assumptions; not an attribution.")
+    if args.json:
+        Path(args.json).write_text(json.dumps({"command": "tour", **out}, indent=1, default=str))
+    return 0 if out["complete"] == len(out["runs"]) else 5
+
+
 def cmd_task(args: argparse.Namespace) -> int:
     from .diagnose import diagnose_task
     from .runner import Push, PushGenerator, load_schedule
@@ -646,6 +698,26 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--push-body", default="torso_link")
     p.add_argument("--workers", type=int)
     p.set_defaults(fn=cmd_task)
+
+    p = sub.add_parser(
+        "tour", help="closed-loop waypoint tour (the teleop-walking-benchmark tour by default)"
+    )
+    sim_args(p)
+    p.add_argument("--waypoints", help="YAML list of [x, y, yaw] relative to the start pose")
+    p.add_argument("--point-s", type=float, default=5.0, help="seconds per waypoint")
+    p.add_argument("--seeds", type=int, default=3)
+    p.add_argument(
+        "--arms",
+        choices=["policy", "hold", "walk"],
+        default="policy",
+        help="who drives the arm joints: the policy, a hold at the benchmark's stance, "
+        "or the benchmark's random walk",
+    )
+    p.add_argument("--arms-obs", choices=["real", "echo_action", "default"], default="real")
+    p.add_argument("--hold-gains", choices=["armature", "policy"], default="armature")
+    p.add_argument("--punches", choices=["none", "benchmark"], default="none")
+    p.add_argument("--workers", type=int)
+    p.set_defaults(fn=cmd_tour)
 
     p = sub.add_parser("infer", help="observation layout from a trace, abstaining when ambiguous")
     p.add_argument("trace", nargs="?", help="golden trace directory or harness log .npz")

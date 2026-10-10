@@ -392,12 +392,22 @@ def test_an_explicit_chunk_layout(init):
     whole, _, cols = build_observation(s, c)
     assert whole.shape == (30, 2 * 3 + 3 * 3)
     qr = q - [0.1, -0.2]
+
+    def back(v, k, t, start):
+        if t - k >= start:
+            return v[t - k]
+        return v[start] if init == "repeat_first" else 0 * v[0]
+
     for t in (0, 1, 2, 7, 25, 26, 29):
-        start = 25 if t >= 25 else 0
-        back = lambda v, k: (
-            v[t - k] if t - k >= start else (v[start] if init == "repeat_first" else 0 * v[0])
-        )  # noqa: E731
-        want = np.r_[qr[t], back(qr, 1), back(qr, 2), back(cmd, 1), back(cmd, 2), cmd[t]]
+        st = 25 if t >= 25 else 0
+        want = np.r_[
+            qr[t],
+            back(qr, 1, t, st),
+            back(qr, 2, t, st),
+            back(cmd, 1, t, st),
+            back(cmd, 2, t, st),
+            cmd[t],
+        ]
         assert np.allclose(whole[t], want), t
     assert cols["velocity_commands"].tolist() == list(range(6, 15))
     b = ObservationBuilder(c)

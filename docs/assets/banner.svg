@@ -29,9 +29,20 @@
       .foot { animation: none; opacity: 1; }
       .pulse { animation: none; }
     }
+    .logo-gate { stroke: var(--gate); stroke-width: 4; }
+    .logo-leg { stroke: var(--step); stroke-width: 4; }
+    .logo-joint { fill: var(--bg); stroke: var(--step); stroke-width: 2.5; }
   </style>
   <rect class="bg" width="900" height="200" rx="12"/>
-  <text class="name" x="40" y="88">gaitkeeper</text>
+  <!-- the logo: a leg stepping through a gate -->
+  <g transform="translate(26.2 29) scale(1.15)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path class="logo-gate" d="M14 51V22a18 18 0 0 1 36 0v29"/>
+    <path class="logo-leg" d="M31 20l6 13-7 12h9"/>
+    <circle class="logo-joint" cx="31" cy="20" r="3.2"/>
+    <circle class="logo-joint" cx="37" cy="33" r="3.2"/>
+    <circle class="logo-joint" cx="30" cy="45" r="3.2"/>
+  </g>
+  <text class="name" x="100" y="88">gaitkeeper</text>
   <text class="tag" x="42" y="122">Why does a walking policy that works in training fail in a second simulator?</text>
 
   <line class="ground" x1="40" y1="166" x2="845" y2="166"/>

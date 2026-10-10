@@ -92,6 +92,7 @@ class RawState:
     prev_action: np.ndarray  # (T, A) previous raw policy output (zeros after reset)
     action: np.ndarray | None = None  # (T, A) raw policy output at each step, when known
     lin_vel_world: np.ndarray | None = None  # (T, 3) root linear velocity, world frame
+    joint_target: np.ndarray | None = None  # (T, J) each joint's drive target, NaN if unknown
 
     @classmethod
     def from_arrays(
@@ -219,19 +220,43 @@ def gait_phase(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
     thr = p.get("stand_threshold")
     if thr is not None:
         out[np.linalg.norm(s.command[:, :3], axis=1) < float(thr)] = 0.0
+    if p.get("gate") == "zero_phase" and s.command.shape[1] > 3:
+        # the port's gate shut: phase zero (sin 0, cos 1), the clock running on underneath
+        shut = s.command[:, 3] < 0.5
+        out[shut] = [0.0, 1.0]
     return out
+
+
+def _command_norm(cmd: np.ndarray, how: str) -> np.ndarray:
+    c = np.asarray(cmd, dtype=np.float64)[:, :3]
+    return np.linalg.norm(c[:, :2] if how == "planar" else c, axis=1)
 
 
 def gait_phase_legs(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
     """A two-leg clock: [sin, sin, cos, cos] of the left and right phases, the right leg half
     a period behind, so [s, -s, c, -c]. Used by ClOBOT's G1 policy (gait_phase_legs, period
-    1.0); the clock runs from the episode start and is never zeroed."""
+    1.0); the clock runs from the episode start. With ``stand.mode: zero_phase``, both legs
+    read phase zero while the command's norm (``stand.norm``) is below ``stand.threshold``,
+    the clock running on underneath (handoff)."""
     period = float(p["period"])
     offset = float(p.get("offset", 0.5))
     k = s.episode_step.astype(np.float64) + int(p.get("clock_offset_steps", 0))
     ph = np.mod(k * ctx.policy_dt, period) / period
     a, b = 2 * np.pi * ph, 2 * np.pi * (ph + offset)
+    st = p.get("stand") or {}
+    if st.get("mode") == "zero_phase":
+        still = _command_norm(s.command, st.get("norm", "norm3")) < float(st["threshold"])
+        a, b = np.where(still, 0.0, a), np.where(still, 0.0, b)
     return np.stack([np.sin(a), np.sin(b), np.cos(a), np.cos(b)], axis=1)
+
+
+def gravity_euler(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    """Roll and pitch read off projected gravity g (body frame): atan2(-g_y, -g_z) and
+    asin(g_x), as a port computes them from the gravity it is given (handoff)."""
+    g = projected_gravity(s, p, ctx)
+    return np.stack(
+        [np.arctan2(-g[:, 1], -g[:, 2]), np.arcsin(np.clip(g[:, 0], -1.0, 1.0))], axis=1
+    )
 
 
 def term_joints(p: dict[str, Any], ctx: TermContext) -> list[str]:
@@ -273,6 +298,15 @@ def joint_vel_rel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarra
     return s.joint_vel[:, s.joint_index(term_joints(p, ctx))].copy()
 
 
+def joint_target_rel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    """The target a joint is driven to, minus its default: a reference the port observes for
+    joints something else drives (asap's upper-body reference: the harness's arm targets)."""
+    if s.joint_target is None:
+        raise ValueError("joint_target_rel needs the joints' drive targets, which this state lacks")
+    js = term_joints(p, ctx)
+    return s.joint_target[:, s.joint_index(js)] - _term_default(p, ctx)[None]
+
+
 def last_action(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
     return s.prev_action.copy()
 
@@ -303,6 +337,7 @@ def _row(s: RawState, t: int) -> RawState:
         prev_action=s.prev_action[t : t + 1],
         action=None if s.action is None else s.action[t : t + 1],
         lin_vel_world=None if s.lin_vel_world is None else s.lin_vel_world[t : t + 1],
+        joint_target=None if s.joint_target is None else s.joint_target[t : t + 1],
     )
 
 
@@ -462,7 +497,11 @@ def _stateful(term: dict[str, Any]):
     p = term.get("params", {}) or {}
     if term["id"] == "last_action" and int(p.get("lag", 1)) > 1:
         return _action_lag_step
-    if term["id"] == "gait_phase_legs" and p.get("stand"):
+    if (
+        term["id"] == "gait_phase_legs"
+        and (p.get("stand") or {}).get("mode", "hold") == "hold"
+        and p.get("stand")
+    ):
         return _gait_phase_legs_stand_step
     return STATEFUL.get(term["id"])
 
@@ -485,11 +524,13 @@ TERMS: dict[str, TermFn] = {
     "base_ang_vel": base_ang_vel,
     "base_lin_vel": base_lin_vel,
     "projected_gravity": projected_gravity,
+    "gravity_euler": gravity_euler,
     "velocity_commands": velocity_commands,
     "gait_phase": gait_phase,
     "gait_phase_legs": gait_phase_legs,
     "joint_pos_rel": joint_pos_rel,
     "joint_vel_rel": joint_vel_rel,
+    "joint_target_rel": joint_target_rel,
     "last_action": last_action,
     "constant": constant,
     "joint_vel_diff": _scan_term(_joint_vel_diff_step),
@@ -588,12 +629,17 @@ def assemble(
     if first.size:
         first[0] = True
     zero_first = history.get("first_frame") == "zeros"
-    windows = {}
+    vals = {}
     for t in terms:
         v = values[term_key(t)]
         if zero_first:  # the port builds no observation at an episode's first step
             v = np.where(first[:, None], 0.0, v)
-        windows[term_key(t)] = stack_history(v, reset, length, init, order)
+        vals[term_key(t)] = v
+    chunks = history_chunks(history)
+    if chunks is not None:
+        parts = [lagged(vals[k], reset, lag, init) for k, lag in chunks]
+        return np.concatenate(parts, axis=1), term_slices(terms, history)
+    windows = {k: stack_history(v, reset, length, init, order) for k, v in vals.items()}
     t_len = reset.shape[0]
     if layout == "term_major":
         parts = [windows[term_key(t)].reshape(t_len, -1) for t in terms]
@@ -605,6 +651,30 @@ def assemble(
     return obs, term_slices(terms, history)
 
 
+def history_chunks(history: dict[str, Any]) -> list[tuple[str, int]] | None:
+    """``history.chunks``: the observation as an explicit list of [term, lag] blocks, in
+    order, each the term's value that many steps back (a layout one history window does not
+    describe: the current frame split around a history of earlier ones, say)."""
+    ch = (history or {}).get("chunks")
+    return None if not ch else [(str(k), int(lag)) for k, lag in ch]
+
+
+def lagged(v: np.ndarray, reset: np.ndarray, lag: int, init: str) -> np.ndarray:
+    """(T, d) per-step values to the value ``lag`` steps back within the episode; before the
+    episode's start, its first value (``init`` repeat_first) or zeros."""
+    out = np.empty_like(v)
+    start = 0
+    for t in range(len(v)):
+        if t == 0 or reset[t]:
+            start = t
+        src = t - lag
+        if src >= start:
+            out[t] = v[src]
+        else:
+            out[t] = v[start] if init == "repeat_first" else 0.0
+    return out
+
+
 def term_slices(terms: list[dict[str, Any]], history: dict[str, Any]) -> dict[str, np.ndarray]:
     """Column indices of each term (all history slots) in the assembled observation."""
     length = int(history.get("length", 1))
@@ -612,6 +682,13 @@ def term_slices(terms: list[dict[str, Any]], history: dict[str, Any]) -> dict[st
     dims = [int(t["dim"]) for t in terms]
     cols: dict[str, list[int]] = {term_key(t): [] for t in terms}
     pos = 0
+    chunks = history_chunks(history)
+    if chunks is not None:
+        dim = {term_key(t): int(t["dim"]) for t in terms}
+        for k, _lag in chunks:
+            cols[k].extend(range(pos, pos + dim[k]))
+            pos += dim[k]
+        return {k: np.array(v, dtype=int) for k, v in cols.items()}
     if layout == "term_major":
         for t, d in zip(terms, dims):
             cols[term_key(t)] = list(range(pos, pos + d * length))
@@ -663,6 +740,9 @@ class ObservationBuilder:
         self.clip_then_scale = bool(group.get("clip_then_scale", True))
         self.history = dict(group.get("history", {}) or {})
         self.length = int(self.history.get("length", 1))
+        self.chunks = history_chunks(self.history)
+        if self.chunks is not None:
+            self.length = max(lag for _, lag in self.chunks) + 1
         self.ctx = context_from_contract(contract)
         # joints the observation reads beyond the policy's own: the caller passes their
         # positions and velocities after the policy joints'
@@ -681,6 +761,7 @@ class ObservationBuilder:
         episode_step: int,
         prev_action: np.ndarray,
         lin_vel_world: np.ndarray | None = None,
+        joint_target: np.ndarray | None = None,
     ) -> np.ndarray:
         reset = episode_step == 0
         s = RawState(
@@ -694,6 +775,7 @@ class ObservationBuilder:
             reset=np.array([reset]),
             prev_action=(np.zeros_like(prev_action) if reset else np.asarray(prev_action))[None],
             lin_vel_world=None if lin_vel_world is None else np.asarray(lin_vel_world, float)[None],
+            joint_target=None if joint_target is None else np.asarray(joint_target, float)[None],
         )
         values = {}
         for term in self.terms:
@@ -719,6 +801,8 @@ class ObservationBuilder:
                 buf = np.roll(buf, -1, axis=0)
                 buf[-1] = x
             self.buffers[term_key(t)] = buf
+        if self.chunks is not None:
+            return np.concatenate([self.buffers[k][-1 - lag] for k, lag in self.chunks])
         order = self.history.get("order", "oldest_first")
         win = {k: (b if order == "oldest_first" else b[::-1]) for k, b in self.buffers.items()}
         if self.history.get("layout", "term_major") == "term_major":

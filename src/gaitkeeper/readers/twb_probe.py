@@ -17,8 +17,13 @@ reads off what it does:
   with the stance warped (walk-these-ways);
 * what the port does to the command: its own steering from the harness's task (a waypoint
   follower, or the command's direction at a speed set by the distance), and a gate that
-  passes it only while it is nonzero, after a warm-up;
-* motors the port observes but no action drives (a held waist, the harness's arms);
+  passes it only while it is nonzero (after a warm-up), above some size, or once the
+  waypoint is far enough (a walk latch);
+* motors the port observes but no action drives (a held waist, the harness's arms), and the
+  harness's arm targets when the port observes those;
+* a layout no single history window describes (the current frame split around earlier
+  ones, or repeated in front of a history that holds it): read one frame at a time, the
+  layout stated as [term, lag] chunks;
 * a port with variants (made by name), and one that runs a walking and a standing graph
   picked by the command;
 * the constants behind the interface: gains, ``owned()`` and the command limits.
@@ -112,6 +117,7 @@ class ProbeResult:
     switch: dict[str, Any] | None = None  # two graphs picked by the command
     gate: dict[str, Any] | None = None  # when the port passes its command at all
     extra_default: list[float] = field(default_factory=list)  # their joint_pos_rel offsets
+    target_default: dict[int, float] = field(default_factory=dict)  # joint_target_rel offsets
 
     def to_json(self) -> dict[str, Any]:
         return dict(self.__dict__)
@@ -125,6 +131,7 @@ def _inputs(cmd=BASE_CMD) -> dict[str, np.ndarray]:
         "lin_vel": np.zeros(3),
         "gravity": np.array([0.0, 0.0, -1.0]),
         "cmd": np.array(cmd, float),
+        "arm": STANCE.copy(),  # the harness's arm targets
     }
 
 
@@ -156,7 +163,7 @@ def _run(
             x["gravity"],
             x["cmd"],
             action=act,
-            arm_pose=STANCE,
+            arm_pose=x["arm"],
             task=task,
         )
         obs.append(seen[0][: a.obs_dim])
@@ -174,7 +181,7 @@ def _round(x: float, sig: int = 5) -> float:
     return float(round(x, sig - 1 - int(math.floor(math.log10(abs(x))))))
 
 
-def probe(a: Adapter) -> ProbeResult:
+def _probe(a: Adapter) -> ProbeResult:
     n, steps = a.act_dim, WARM + LAGS + 1
     findings: list[str] = []
     base_obs, base_tgt = _run(a, steps)
@@ -184,8 +191,9 @@ def probe(a: Adapter) -> ProbeResult:
     resp: dict[tuple[str, int], list[dict[int, float]]] = {}
     tresp: dict[int, dict[int, float]] = {}
     sizes = {"q": NUM_MOTOR, "dq": NUM_MOTOR, "action": n} | {k: 3 for k in SCALARS}
+    sizes["arm"] = NUM_MOTOR  # the harness's arm targets: does the port observe them?
     for fam, size in sizes.items():
-        for e in range(size):
+        for e in range(ARM_LEFT_FIRST if fam == "arm" else 0, size):
             o, t = _run(a, steps, WARM, fam, e)
             d = (o[WARM:] - base_obs[WARM:]) / DELTA
             resp[(fam, e)] = [_nz(d[k]) for k in range(len(d))]
@@ -349,6 +357,8 @@ def probe(a: Adapter) -> ProbeResult:
         for e in range(dim):
             for i, g in newest(fam, e).items():
                 put(i, (tid, e, _round(g)))
+    for i, d_ in _gravity_angles(a, desc, base_obs, findings).items():
+        desc[i] = d_
     # A motor no action drives can still be observed (a waist the port holds, arms the
     # harness holds): it joins the joint terms after the policy's joints, as element n + j.
     extra: list[int] = []
@@ -370,6 +380,20 @@ def probe(a: Adapter) -> ProbeResult:
                     default_pose[k] = _round(STANCE[m] - base_obs[WARM][i] / g)
                 elif fam == "q":
                     extra_default[m] = _round(STANCE[m] - base_obs[WARM][i] / g)
+    target_default: dict[int, float] = {}
+    for m in range(ARM_LEFT_FIRST, NUM_MOTOR):
+        for i, g in newest("arm", m).items():
+            if m in kq:
+                raise ProbeError(f"{a.name}: obs {i} follows the harness's target for motor {m}")
+            if m not in extra:
+                extra.append(m)
+            put(i, ("joint_target_rel", n + extra.index(m), _round(g)))
+            target_default[m] = _round(STANCE[m] - base_obs[WARM][i] / g)
+    if target_default:
+        findings.append(
+            f"the port observes the harness's targets for motor(s) {sorted(target_default)} "
+            "(joint_target_rel)"
+        )
     if extra:
         findings.append(
             f"the port observes motor(s) {extra} that no action drives (held by the port or "
@@ -415,6 +439,8 @@ def probe(a: Adapter) -> ProbeResult:
         for i, d_ in gdesc.items():
             put(i, d_)
         task_old |= gold
+    elif shaping is None:
+        gate = _norm_gate(a, desc, findings)
 
     # clock elements and their ages; constants
     # (a clock whose rate follows the command responds to it a step later, so it can carry
@@ -528,7 +554,8 @@ def probe(a: Adapter) -> ProbeResult:
     full_dim = {"joint_pos_rel": n, "joint_vel_rel": n, "last_action": n, "gait_phase": 2}
     full_dim |= {"joint_vel_diff": n, "gait_phase_speed": 2}
     full_dim |= {"gait_phase_legs": 4} | {tid: d for tid, d in SCALARS.values()}
-    full_dim |= {"gait_phase_gated": 2, "command_gate": 1}
+    full_dim |= {"gait_phase_gated": 2, "command_gate": 1, "gravity_euler": 2}
+    full_dim |= {"joint_target_rel": n}
     full_dim |= {"gait_phase_feet": len((clock or {}).get("offsets", []))}
     order = sorted(desc)
     terms: list[dict[str, Any]] = []
@@ -560,7 +587,7 @@ def probe(a: Adapter) -> ProbeResult:
         t.pop("values")
         full = full_dim[t["id"]]
         if (
-            t["id"] in ("joint_pos_rel", "joint_vel_rel", "joint_vel_diff")
+            t["id"] in ("joint_pos_rel", "joint_vel_rel", "joint_vel_diff", "joint_target_rel")
             and max(t["elements"]) >= n
         ):
             t["extra"] = list(extra)
@@ -687,9 +714,178 @@ def probe(a: Adapter) -> ProbeResult:
         shaping=shaping if shaping is not None else _shaping(a, desc, findings),
         observed_extra=extra,
         extra_default=[float(extra_default.get(m, 0.0)) for m in extra],
+        target_default={int(m): float(v) for m, v in target_default.items()},
         switch=_switch(a, p2m_i, p2m_from, findings),
         gate=gate,
     )
+
+
+class _TaskDefault:
+    """An adapter run with a waypoint whenever the caller gives none (one far enough to open
+    a port's walk latch), so its command passes as an ungated port's does."""
+
+    def __init__(self, a: Adapter, task: np.ndarray):
+        self._a = a
+        self._task = np.r_[task, np.zeros(60)]
+
+    def __getattr__(self, k: str) -> Any:
+        return getattr(self._a, k)
+
+    def step(self, *args: Any, task: Any = None, **kw: Any) -> tuple[np.ndarray, list[np.ndarray]]:
+        return self._a.step(*args, task=self._task if task is None else task, **kw)
+
+
+FAR_TASK = np.array([1.0, 0.3, math.cos(0.2), math.sin(0.2)])
+
+
+def _latch_task(a: Adapter) -> np.ndarray | None:
+    """A task under which a port passes its command when it passes none without a waypoint
+    (a walk latch on the task; asap): the far task, or None when that is not the port's way."""
+
+    def responses(task) -> list[dict[int, float]]:
+        base, _ = _run(a, WARM + 1, task=task)
+        out = []
+        for e in range(3):
+            o, _ = _run(a, WARM + 1, WARM, "cmd", e, task=task)
+            out.append(_nz((o[WARM] - base[WARM]) / DELTA))
+        return out
+
+    if all(responses(None)):
+        return None
+    far = responses(np.r_[FAR_TASK, np.zeros(60)])
+    if not all(far):
+        return None
+    other = responses(np.r_[[1.5, -0.4, 1.5 * math.cos(-0.5), 1.5 * math.sin(-0.5)], np.zeros(60)])
+    same = all(
+        set(f) == set(o_) and all(abs(f[i] - o_[i]) < 1e-6 for i in f) for f, o_ in zip(far, other)
+    )
+    return FAR_TASK if same else None
+
+
+def _with_latch(a: Adapter, r: ProbeResult, findings: list[str]) -> ProbeResult:
+    """A reading made with the latch held open, completed: the latch's thresholds (a gate on
+    the task), the flag it feeds, and the clocks it stops at phase zero."""
+    cmd_el = {}
+    for t in r.terms:
+        if t["id"] == "velocity_commands":
+            for k, e in enumerate(t.get("index", range(t["dim"]))):
+                cmd_el[e] = (t["start"] + k, t["scale"][k])
+    if 0 not in cmd_el:
+        raise ProbeError(f"{a.name}: a walk latch on the task, but no vx command element")
+    i_vx, g_vx = cmd_el[0]
+
+    def latched_after(tasks: list) -> bool:
+        a.reset()
+        x = _inputs()
+        for tk in tasks:
+            _, seen = a.step(
+                x["q"],
+                x["dq"],
+                x["gyro"],
+                x["lin_vel"],
+                x["gravity"],
+                x["cmd"],
+                arm_pose=STANCE,
+                task=np.r_[tk, np.zeros(60)],
+            )
+        return abs(seen[0][i_vx] - g_vx * BASE_CMD[0]) < 1e-6
+
+    def bisect(f, lo: float, hi: float) -> float:
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            lo, hi = (lo, mid) if f(mid) else (mid, hi)
+        return _round(hi, 4)
+
+    zero = np.zeros(4)
+    on = [FAR_TASK] * 3
+    enter_d = bisect(lambda d: latched_after([np.array([d, 0.0, d, 0.0])]), 0.0, 1.0)
+    enter_y = bisect(lambda y: latched_after([np.array([0.0, y, 0.0, 0.0])]), 0.0, 1.0)
+    # once open, it stays open until the waypoint is within both exit thresholds: the
+    # bisections find the first value that opens it (enter) and the first that keeps it open
+    exit_d = bisect(lambda d: latched_after(on + [np.array([d, 0.0, d, 0.0])]), 0.0, enter_d)
+    exit_y = bisect(lambda y: latched_after(on + [np.array([0.0, y, 0.0, 0.0])]), 0.0, enter_y)
+    gate = {
+        "on": "task_latch",
+        "enter": {"dist": enter_d, "yaw": enter_y},
+        "exit": {"dist": exit_d, "yaw": exit_y},
+    }
+    if latched_after([zero]):
+        raise ProbeError(f"{a.name}: the command passes with no waypoint after all")
+    # the flag: constants under the open latch that read otherwise when it is shut
+    shut, _ = _run(a, WARM + 1)
+    opened, _ = _run(a, WARM + 1, task=np.r_[FAR_TASK, np.zeros(60)])
+    terms = []
+    for t in r.terms:
+        if t["id"] != "constant":
+            terms.append(t)
+            continue
+        idx = [t["start"] + k for k in range(t["dim"])]
+        flag = [abs(opened[WARM][i] - shut[WARM][i]) > TOL for i in idx]
+        run_start = 0
+        for k in range(1, t["dim"] + 1):
+            if k < t["dim"] and flag[k] == flag[run_start]:
+                continue
+            sub = list(range(run_start, k))
+            if flag[run_start]:
+                for j in sub:
+                    if abs(shut[WARM][idx[j]]) > TOL:
+                        raise ProbeError(
+                            f"{a.name}: obs {idx[j]} is a flag that is not 0 when shut"
+                        )
+                terms.extend(
+                    {
+                        "id": "command_gate",
+                        "dim": 1,
+                        "scale": [_round(t["value"][j])],
+                        "start": idx[j],
+                        "source_name": "command_gate",
+                    }
+                    for j in sub
+                )
+            else:
+                terms.append(
+                    dict(
+                        t,
+                        dim=len(sub),
+                        value=[t["value"][j] for j in sub],
+                        scale=[1.0] * len(sub),
+                        start=idx[sub[0]],
+                    )
+                )
+            run_start = k
+    # unique names, as the reading names them
+    seen_ids: Counter[str] = Counter()
+    for t in terms:
+        seen_ids[t["id"]] += 1
+        t["source_name"] = t["id"] if seen_ids[t["id"]] == 1 else f"{t['id']}_{seen_ids[t['id']]}"
+    r.terms = terms
+    # a clock the latch stops reads phase zero while shut
+    if r.clock and r.clock.get("id") == "gait_phase":
+        for t in r.terms:
+            if t["id"] != "gait_phase":
+                continue
+            for k, e in enumerate(t.get("index", range(t["dim"]))):
+                want = 0.0 if e == 0 else t["scale"][k]
+                if abs(shut[WARM][t["start"] + k] - want) > 1e-5:
+                    raise ProbeError(f"{a.name}: a clock the walk latch stops, not at phase zero")
+        r.clock["gate"] = "zero_phase"
+    r.gate = gate
+    findings.append(
+        "the port passes its command only once the waypoint is farther than "
+        f"{enter_d:g} m or {enter_y:g} rad off, until it is within {exit_d:g} m and "
+        f"{exit_y:g} rad (a walk latch on the task)"
+    )
+    return r
+
+
+def probe(a: Adapter) -> ProbeResult:
+    """Read an adapter (see the module's docstring). A port that passes its command only
+    once a waypoint is far enough is read with one, then its latch is measured."""
+    lt = _latch_task(a)
+    if lt is None:
+        return _probe(a)
+    r = _probe(_TaskDefault(a, lt))  # type: ignore[arg-type]
+    return _with_latch(a, r, r.findings)
 
 
 def _shaping(
@@ -748,6 +944,83 @@ def _shaping(
         "follower with " + ", ".join(f"{k} {v:g}" for k, v in params.items())
     )
     return {"kind": "waypoint_follow", "params": params}
+
+
+def _gravity_angles(
+    a: Adapter, desc: dict[int, tuple[str, int, float]], base_obs: np.ndarray, findings: list[str]
+) -> dict[int, tuple[str, int, float]]:
+    """Elements that follow gravity but not linearly: roll atan2(-g_y, -g_z) and pitch
+    asin(g_x) computed from it (gravity_euler). Returns their new descriptions."""
+    els = {i: d_ for i, d_ in desc.items() if d_[0] == "projected_gravity"}
+    if not els:
+        return {}
+    tilts = [np.array([0.35, -0.3, -0.9]), np.array([-0.4, 0.5, -0.8]), np.array([0.2, 0.6, -0.75])]
+    seen = []
+    for g in tilts:
+        g = g / np.linalg.norm(g)
+        a.reset()
+        x = _inputs()
+        for _ in range(3):
+            _, sv = a.step(x["q"], x["dq"], x["gyro"], x["lin_vel"], g, x["cmd"], arm_pose=STANCE)
+        seen.append((g, sv[0][: a.obs_dim]))
+    out = {}
+    for i, (_tid, e, gain) in els.items():
+        lin = [base_obs[2][i] + gain * (g[e] - (-1.0 if e == 2 else 0.0)) for g, _ in seen]
+        if max(abs(v[i] - L) for (_, v), L in zip(seen, lin)) < 1e-5:
+            continue
+        feats = {
+            0: [math.atan2(-g[1], -g[2]) for g, _ in seen],
+            1: [math.asin(max(-1.0, min(1.0, g[0]))) for g, _ in seen],
+        }
+        hit = None
+        for k, f in feats.items():
+            vals = [v[i] for _, v in seen]
+            sc = vals[0] / f[0] if abs(f[0]) > 1e-9 else 0.0
+            if abs(sc) > 1e-6 and all(abs(v - sc * fv) < 1e-5 for v, fv in zip(vals, f)):
+                hit = (k, _round(sc))
+                break
+        if hit is None:
+            raise ProbeError(f"{a.name}: obs {i} follows gravity, but not as gaitkeeper builds it")
+        out[i] = ("gravity_euler", hit[0], hit[1])
+    if out:
+        findings.append(
+            f"obs {sorted(out)} are roll and pitch computed from gravity (atan2, asin), not "
+            "gravity itself"
+        )
+    return out
+
+
+def _norm_gate(
+    a: Adapter, desc: dict[int, tuple[str, int, float]], findings: list[str]
+) -> dict[str, Any] | None:
+    """A port that zeroes its command below some size, with no flag for it (handoff): the
+    threshold, and whether it is the full or the planar norm. None when small commands
+    pass."""
+    el = {d_[1]: (i, d_[2]) for i, d_ in desc.items() if d_[0] == "velocity_commands"}
+    if 0 not in el:
+        return None
+    i0, g0 = el[0]
+
+    def passes(cmd) -> bool:
+        o, _ = _run(a, WARM + 1, cmd=cmd)
+        return abs(o[WARM][i0] - g0 * cmd[0]) < 1e-6 and abs(o[WARM][i0]) > 1e-9
+
+    if passes((1e-3, 0.0, 0.0)):
+        return None
+    lo, hi = 0.0, 1.0
+    if not passes((hi, 0.0, 0.0)):
+        return None
+    for _ in range(30):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if not passes((mid, 0.0, 0.0)) else (lo, mid)
+    thr = _round(hi, 4)
+    # with vx just under the threshold, a yaw rate that lifts the full norm over it
+    norm = "norm3" if passes((thr * 0.9, 0.0, thr * 0.6)) else "planar"
+    findings.append(
+        f"the port zeroes its command while its {'planar ' if norm == 'planar' else ''}norm "
+        f"is below {thr:g}"
+    )
+    return {"on": "command_norm", "threshold": thr, "norm": norm}
 
 
 def _gate(
@@ -1451,15 +1724,35 @@ def _legs_stand(
 
     z, _ = _run(a, 3, cmd=(0.0, 0.0, 0.0))
     hold = phases(z[2])
-    # stand for 3 steps, then move: the first moving step shows where it restarts
-    a.reset()
-    rows = []
-    x = _inputs()
-    for k in range(5):
-        c = (0.0, 0.0, 0.0) if k < 3 else BASE_CMD
-        _, seen = a.step(x["q"], x["dq"], x["gyro"], x["lin_vel"], x["gravity"], c, arm_pose=STANCE)
-        rows.append(seen[0][: a.obs_dim])
-    resume = phases(rows[3])
+
+    def restart(k: int) -> list[float]:
+        """Stand k steps, then move: the phases at the first moving step."""
+        a.reset()
+        x = _inputs()
+        for t in range(k + 1):
+            c = (0.0, 0.0, 0.0) if t < k else BASE_CMD
+            _, seen = a.step(
+                x["q"], x["dq"], x["gyro"], x["lin_vel"], x["gravity"], c, arm_pose=STANCE
+            )
+        return phases(seen[0][: a.obs_dim])
+
+    resume, later = restart(3), restart(7)
+    if any(abs(math.remainder(b - r, 1.0)) > 1e-4 for r, b in zip(resume, later)):
+        # the clock ran on while it read zero: masked, not held (handoff)
+        if any(abs(math.remainder(h, 1.0)) > 1e-4 for h in hold):
+            raise ProbeError(f"{a.name}: a two-leg clock masked at phases {hold} while standing")
+        lo, hi = 0.0, 1.0
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if holding((mid, 0.0, 0.0)) else (lo, mid)
+        thr = _round(hi, 4)
+        norm = "planar" if holding((thr * 0.9, 0.0, thr * 0.6)) else "norm3"
+        findings.append(
+            f"the two-leg clock reads phase zero while the command's "
+            f"{'planar ' if norm == 'planar' else ''}norm is below "
+            f"{thr:g}, running on underneath"
+        )
+        return {"mode": "zero_phase", "norm": norm, "threshold": thr}
     eps = []
     for axis in (0, 2):
         lo, hi = 0.0, 0.5
@@ -1482,7 +1775,7 @@ def _clock(
     """Fit sin(w t + phi_i) to each clock element and name it as an element of gait_phase
     ([sin, cos] of one phase) or gait_phase_legs ([sin a, sin b, cos a, cos b], b half a
     period on)."""
-    if gate is not None:
+    if gate is not None and gate.get("on") == "command_nonzero":
         return _gated_clock(a, idx, gate, findings)
     sc = _speed_clock(a, idx, findings)
     if sc is not None:
@@ -1642,6 +1935,8 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
                 }
                 if "stand_threshold" in ck:
                     term["params"]["stand_threshold"] = ck["stand_threshold"]
+                if ck.get("gate"):
+                    term["params"]["gate"] = ck["gate"]
             elif t["id"] == "gait_phase_feet":
                 ck = r.clock or {}
                 term["params"] = {
@@ -1668,12 +1963,16 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
                     term["params"]["default"] = {
                         allm[mi]: float(d_) for mi, d_ in zip(r.observed_extra, r.extra_default)
                     }
+                if t["id"] == "joint_target_rel":
+                    term["params"]["default"] = {
+                        allm[mi]: float(r.target_default.get(mi, 0.0)) for mi in r.observed_extra
+                    }
             if "index" in t:
                 term["params"]["index"] = t["index"]
             terms.append(term)
         hist = {
             k: r.history[k]
-            for k in ("length", "layout", "order", "init", "first_frame")
+            for k in ("length", "layout", "order", "init", "first_frame", "chunks")
             if k in r.history
         }
         c.set(
@@ -1835,6 +2134,223 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
     return out
 
 
+class _FrameView:
+    """An adapter seen through one frame of its observation (the elements that are no
+    older copy of another): what ``probe`` reads when the layout around it is irregular."""
+
+    def __init__(self, a: Adapter, frame: list[int]):
+        self._a = a
+        self._frame = np.array(frame, dtype=int)
+        self.obs_dim = len(frame)
+        self.engines = [
+            dict(e, inputs=[len(frame)] + list(e["inputs"][1:]))
+            if e["inputs"][:1] == [a.obs_dim]
+            else e
+            for e in a.engines
+        ]
+
+    def __getattr__(self, k: str) -> Any:
+        return getattr(self._a, k)
+
+    def step(self, *args: Any, **kw: Any) -> tuple[np.ndarray, list[np.ndarray]]:
+        tgt, seen = self._a.step(*args, **kw)
+        n = self._a.obs_dim
+        return tgt, [sv[:n][self._frame] if len(sv) >= n else sv for sv in seen]
+
+
+def _random_trace(a: Adapter, steps: int, seed: int = 1) -> np.ndarray:
+    """The observation over ``steps`` steps of random inputs, a random action each step."""
+    rng = np.random.default_rng(seed)
+    a.reset()
+    rows = []
+    lim = a.limits
+    vx = (lim["vx_min"], lim["vx_max"]) if lim["vx_max"] > lim["vx_min"] else (-0.5, 0.5)
+    vy = lim["vy_abs"] or 0.3
+    wz = lim["yaw_rate_abs"] or 0.5
+    for t in range(steps):
+        g = np.array([0.0, 0.0, -1.0]) + rng.normal(0, 0.15, 3)
+        cmd = np.array([rng.uniform(*vx), rng.uniform(-vy, vy), rng.uniform(-wz, wz)])
+        if t % 7 == 3:
+            cmd[:] = 0.0  # standing now and then: clocks and gates that stop, stop
+        d_ = float(rng.uniform(0.0, 2.0))
+        b_ = float(rng.uniform(-math.pi, math.pi))
+        task = [d_, rng.uniform(-1.0, 1.0), d_ * math.cos(b_), d_ * math.sin(b_)]
+        if t % 9 in (4, 5):
+            task = [0.0, 0.0, 0.0, 0.0]  # at the waypoint now and then: latches shut
+        arm = STANCE.copy()
+        arm[ARM_LEFT_FIRST:] += rng.normal(0, 0.1, NUM_MOTOR - ARM_LEFT_FIRST)
+        _, seen = a.step(
+            STANCE + rng.normal(0, 0.1, NUM_MOTOR),
+            rng.normal(0, 1.0, NUM_MOTOR),
+            rng.normal(0, 0.5, 3),
+            rng.normal(0, 0.5, 3),
+            g / np.linalg.norm(g),
+            cmd,
+            action=rng.normal(0, 0.5, a.act_dim),
+            arm_pose=arm,
+            task=np.r_[task, np.zeros(60)],
+        )
+        rows.append(seen[0][: a.obs_dim])
+    return np.array(rows)
+
+
+def _layout_map(a: Adapter, max_lag: int = LAGS) -> dict[str, Any] | None:
+    """Which elements of the observation are older copies of others: every element that is
+    no copy is the frame; every other is (frame element, lag). Read from random inputs, where
+    a copy repeats its source exactly, lagged. None when nothing is a copy."""
+    T = WARM + max_lag + 40
+    obs = _random_trace(a, T)
+    D = obs.shape[1]
+    varying = np.ptp(obs[T - 40 :], axis=0) > 1e-6
+    matches: dict[int, list[tuple[int, int]]] = {i: [] for i in range(D)}
+    # A copy holds its source's value ``lag`` steps back over the whole trace, and before the
+    # trace has that many steps the first value or zero: a clock that only repeats itself a
+    # period on fails at the start.
+    for lag in range(0, max_lag + 1):
+        A, B = obs[lag:], obs[: T - lag]
+        order = np.argsort(B[-1])
+        b_last = B[-1][order]
+        for i in np.flatnonzero(varying):
+            lo = np.searchsorted(b_last, A[-1, i] - 1e-6)
+            hi = np.searchsorted(b_last, A[-1, i] + 1e-6)
+            for j in order[lo:hi]:
+                if (lag == 0 and j >= i) or not varying[j]:
+                    continue
+                if np.abs(A[:, i] - B[:, j]).max() >= 1e-6:
+                    continue
+                head = obs[:lag, i]
+                if lag and not (np.abs(head - obs[0, j]).max() < 1e-6 or np.abs(head).max() < 1e-9):
+                    continue
+                matches[int(i)].append((int(j), lag))
+    copies = {i for i, m in matches.items() if m}
+    if not copies:
+        return None
+
+    # each copy's source in the frame, at the smallest total lag (relaxed to a fixed point).
+    # A periodic signal (a clock) also matches itself half a period on, so a ring of copies
+    # can have no source: its first element is then the frame's.
+    src: dict[int, tuple[int, int]] = {i: (i, 0) for i in range(D) if i not in copies}
+    while True:
+        changed = True
+        while changed:
+            changed = False
+            for i in copies:
+                if src.get(i, (0, 1))[1] == 0:
+                    continue
+                for j, lag in matches[i]:
+                    if j in src and (i not in src or src[j][1] + lag < src[i][1]):
+                        src[i] = (src[j][0], src[j][1] + lag)
+                        changed = True
+        missing = sorted(copies - set(src))
+        if not missing:
+            break
+        src[missing[0]] = (missing[0], 0)
+    frame = sorted(i for i, (j, lag) in src.items() if j == i and lag == 0)
+    fpos = {i: k for k, i in enumerate(frame)}
+    elem = [(fpos[src[i][0]], src[i][1]) for i in range(D)]
+    # what a lagged element holds before the episode has that many steps
+    init = "repeat_first"
+    for i, (k, lag) in enumerate(elem):
+        if lag > 0:
+            if abs(obs[0, i]) < 1e-9 and abs(obs[0, frame[k]]) > 1e-6:
+                init = "zeros"
+            break
+    return {"frame": frame, "elements": elem, "init": init}
+
+
+def probe_any(a: Adapter) -> ProbeResult:
+    """``probe``, and when its layout reading fails, a reading of one frame of the
+    observation with the layout around it stated element by element (history.chunks)."""
+    try:
+        return probe(a)
+    except ProbeError as e:
+        first = e
+    try:
+        return probe_frames(a)
+    except ProbeError as e:
+        if "nothing in the observation is a copy" in str(e):
+            raise first from None
+        raise ProbeError(
+            f"{e} (read as one frame of an irregular layout; as laid out: {first})"
+        ) from None
+
+
+def probe_frames(a: Adapter) -> ProbeResult:
+    """Read one frame of the observation (the elements that are no older copy of another),
+    and state the layout around it element by element: [term, lag] chunks."""
+    lay = _layout_map(a)
+    if lay is None:
+        raise ProbeError(f"{a.name}: nothing in the observation is a copy of another element")
+    r = probe(_FrameView(a, lay["frame"]))  # type: ignore[arg-type]
+    if r.history.get("length", 1) != 1:
+        raise ProbeError(f"{a.name}: one frame of the observation still holds a history")
+    # each frame position's term and its place in the term; constants are regrouped below
+    where: dict[int, tuple[str, int]] = {}
+    const_at: dict[int, float] = {}
+    for t in r.terms:
+        for k in range(t["dim"]):
+            if t["id"] == "constant":
+                const_at[t["start"] + k] = float(t["value"][k])
+            else:
+                where[t["start"] + k] = (t["source_name"], k)
+    terms = [t for t in r.terms if t["id"] != "constant"]
+    dims = {t["source_name"]: t["dim"] for t in terms}
+    consts: dict[tuple, str] = {}
+    chunks: list[list[Any]] = []
+    i = 0
+    D = len(lay["elements"])
+    while i < D:
+        p, lag = lay["elements"][i]
+        if p in const_at:
+            # a run of constants in the full observation is one constant term (one per value)
+            run = []
+            while i < D and lay["elements"][i][0] in const_at:
+                run.append(const_at[lay["elements"][i][0]])
+                i += 1
+            key = consts.get(tuple(run))
+            if key is None:
+                key = f"constant_{len(consts) + 1}" if consts else "constant"
+                consts[tuple(run)] = key
+                terms.append(
+                    {
+                        "id": "constant",
+                        "source_name": key,
+                        "dim": len(run),
+                        "scale": [1.0] * len(run),
+                        "value": run,
+                        "start": -1,
+                    }
+                )
+                dims[key] = len(run)
+            chunks.append([key, 0])
+            continue
+        key, k = where[p]
+        if k != 0:
+            raise ProbeError(f"{a.name}: obs {i} starts {key} at its element {k}")
+        n = dims[key]
+        for j in range(n):
+            pj, lj = lay["elements"][i + j] if i + j < D else (None, None)
+            if pj is None or where.get(pj) != (key, j) or lj != lag:
+                raise ProbeError(f"{a.name}: obs {i + j} breaks {key} at lag {lag}")
+        chunks.append([key, lag])
+        i += n
+    r.terms = terms
+    r.history = {
+        "length": 1,
+        "layout": "term_major",
+        "order": "oldest_first",
+        "init": lay["init"],
+        "chunks": chunks,
+    } | ({"first_frame": r.history["first_frame"]} if "first_frame" in r.history else {})
+    r.obs_dim = a.obs_dim
+    r.findings.append(
+        f"the observation is one frame of {len(lay['frame'])} elements laid out "
+        f"{len(chunks)} times by term and age (history.chunks, lags up to "
+        f"{max(c[1] for c in chunks)})"
+    )
+    return r
+
+
 def read_twb_adapter(
     policy_cpp: str | Path, mjcf: str | Path, cls: str = "Policy", variant: str | None = None
 ):
@@ -1843,10 +2359,21 @@ def read_twb_adapter(
     ways on random inputs; a mismatch is a term the probe misread or gaitkeeper lacks.
     ``variant`` names the one to read when the port has several (its ``names()``)."""
     a = Adapter(policy_cpp, cls, variant)
-    r = probe(a)
+    r = probe_any(a)
     cs = contracts(r, mjcf, policy_cpp)
     v = verify(a, cs["port"])
     v["ok"] = v["max_abs"] < 1e-4
+    if not v["ok"] and not r.history.get("chunks"):
+        # a layout that only looked like one history window: read it frame by frame
+        try:
+            r2 = probe_frames(a)
+            cs2 = contracts(r2, mjcf, policy_cpp)
+            v2 = verify(a, cs2["port"])
+            if v2["max_abs"] < v["max_abs"]:
+                r, cs, v = r2, cs2, v2
+                v["ok"] = v["max_abs"] < 1e-4
+        except ProbeError:
+            pass
     for c in cs.values():
         note = c.get("source.note")
         c.data["source"]["note"] = note + (
@@ -1913,6 +2440,8 @@ def verify(a: Adapter, port: Any, steps: int = 80, seed: int = 0) -> dict[str, A
         b_ = float(rng.uniform(-math.pi, math.pi))
         task = np.array([d_, rng.uniform(-math.pi, math.pi), d_ * math.cos(b_), d_ * math.sin(b_)])
         action = np.clip(rng.normal(0, 0.5, n), -1.0, 1.0)
+        arm = STANCE.copy()
+        arm[ARM_LEFT_FIRST:] += rng.normal(0, 0.1, NUM_MOTOR - ARM_LEFT_FIRST)
         _, seen = a.step(
             q,
             dq,
@@ -1921,7 +2450,7 @@ def verify(a: Adapter, port: Any, steps: int = 80, seed: int = 0) -> dict[str, A
             R.T @ np.array([0.0, 0.0, -1.0]),
             cmd,
             action=action,
-            arm_pose=STANCE,
+            arm_pose=arm,
             quat=quat,
             task=np.r_[task, np.zeros(60)],
         )
@@ -1934,7 +2463,8 @@ def verify(a: Adapter, port: Any, steps: int = 80, seed: int = 0) -> dict[str, A
                 qj[k], vj[k] = default[k], 0.0
         seen_cmd = policy_command(cmd, task, shaping, gate, t)
         qj, vj = np.r_[qj, q[ex_m]], np.r_[vj, dq[ex_m]]
-        mine = builder.step(quat, gyro, qj, vj, obs_names, seen_cmd, t, prev, v_w)
+        tgt = np.r_[np.full(len(names), np.nan), arm[ex_m]]
+        mine = builder.step(quat, gyro, qj, vj, obs_names, seen_cmd, t, prev, v_w, tgt)
         worst = np.maximum(worst, np.abs(mine - seen[0][: a.obs_dim]))
         prev = action
     per_term = {k: float(worst[c].max()) for k, c in cols.items()}

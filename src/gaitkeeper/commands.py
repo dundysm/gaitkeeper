@@ -107,7 +107,9 @@ class CommandGate:
     ``command_gate`` term reads it).
 
     ``on: command_nonzero``: open while any component of the harness's command is nonzero
-    (falcon's stand flag). ``on: task_latch``: opens when the waypoint is farther than
+    (falcon's stand flag). ``on: command_norm``: open while the command's norm (``norm``:
+    norm3 or planar) is at least ``threshold`` (handoff). ``on: task_latch``: opens when the
+    waypoint is farther than
     ``enter.dist`` or the yaw error exceeds ``enter.yaw``, and closes once both are within
     ``exit`` (asap's walk latch). Either stays shut for ``warmup_s`` after an episode starts."""
 
@@ -115,7 +117,7 @@ class CommandGate:
         self.spec = spec
         self.dt = float(policy_dt)
         self.on = spec.get("on", "command_nonzero")
-        if self.on not in ("command_nonzero", "task_latch"):
+        if self.on not in ("command_nonzero", "command_norm", "task_latch"):
             raise ValueError(f"policy_io.commands.base_velocity.gate: unknown on {self.on!r}")
         self.warmup = float(spec.get("warmup_s", 0.0))
         self.latched = False
@@ -129,6 +131,10 @@ class CommandGate:
         if self.on == "command_nonzero":
             c = np.asarray(cmd, dtype=np.float64)[:3]
             open_ = bool(np.any(c != 0.0))
+        elif self.on == "command_norm":
+            c = np.asarray(cmd, dtype=np.float64)[:3]
+            v = float(np.linalg.norm(c[:2] if self.spec.get("norm") == "planar" else c))
+            open_ = v >= float(self.spec["threshold"])
         else:
             t = np.asarray(ZERO_TASK if task is None else task, dtype=np.float64)
             dist, yaw = float(t[0]), abs(float(t[1]))

@@ -329,3 +329,42 @@ def test_the_new_toy_contracts_rebuild_their_observations():
     bad = ports[TOY4].copy()
     bad.data["policy_io"]["commands"]["base_velocity"]["gate"]["warmup_s"] = 0.5
     assert verify(Adapter(TOY4), bad)["per_term"]["command_gate"] > 0.5
+
+
+TOY6 = Path(__file__).parent / "data" / "twb_toy6" / "policy.cpp"
+TOY7 = Path(__file__).parent / "data" / "twb_toy7" / "policy.cpp"
+
+
+@needs_cxx
+def test_an_irregular_layout_read_frame_by_frame():
+    """asap and handoff in miniature: a walk latch on the task (its flag, a clock it stops
+    at phase zero), the harness's arm targets observed, a current frame split around the
+    frames before it; a frame in front of a history that holds it, a command zeroed below a
+    size with a two-leg clock masked then, roll and pitch from gravity."""
+    from assets import UMJ_G1, need
+
+    need(UMJ_G1)
+    from gaitkeeper.readers.twb_probe import read_twb_adapter
+
+    r, cs, v = read_twb_adapter(TOY6, UMJ_G1)
+    assert v["ok"], v
+    assert r.gate == {
+        "on": "task_latch",
+        "enter": {"dist": 0.1, "yaw": 0.12},
+        "exit": {"dist": 0.05, "yaw": 0.06},
+    }
+    assert r.clock["gate"] == "zero_phase" and r.clock["period"] == 0.8
+    ch = r.history["chunks"]
+    assert ch[:3] == [["last_action", 0], ["base_ang_vel", 0], ["velocity_commands", 0]]
+    assert ["last_action", 1] in ch and ["last_action", 2] in ch and ch[-1] == ["gait_phase_2", 0]
+    tgt = next(t for t in r.terms if t["id"] == "joint_target_rel")
+    assert tgt["index"] == [15, 16, 17]
+    assert "command_gate" in {t["id"] for t in r.terms}
+
+    r, cs, v = read_twb_adapter(TOY7, UMJ_G1)
+    assert v["ok"], v
+    assert r.gate == {"on": "command_norm", "threshold": 0.15, "norm": "norm3"}
+    assert r.clock["stand"] == {"mode": "zero_phase", "norm": "norm3", "threshold": 0.15}
+    assert "gravity_euler" in {t["id"] for t in r.terms}
+    lags = [lag for _, lag in r.history["chunks"]]
+    assert max(lags) == 2 and r.history["init"] == "repeat_first"

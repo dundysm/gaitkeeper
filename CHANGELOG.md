@@ -32,6 +32,21 @@
     clock that runs only while the gate is open (`gait_phase_gated`).
   * openwbt: clock inputs per foot as walk-these-ways builds them (`gait_phase_feet`:
     frequency, stance ratio, offsets, start, and the phase held while the command is zero).
+  * asap and handoff: layouts no single history window describes, read one frame at a time
+    and stated as `[term, lag]` chunks (`history.chunks`): asap's current frame split
+    around the four frames before it term by term, handoff's frame in front of a history
+    that holds it too. Which elements copy which, and how old, is read from random inputs.
+    asap gates its command by a walk latch on the task (`gate.on: task_latch`, its enter
+    and exit distances and yaw errors measured), feeds the latch as a flag and stops its
+    clock at phase zero when shut (`gait_phase` with `gate: zero_phase`), and observes the
+    harness's arm targets (`joint_target_rel`). handoff zeroes its command below a size
+    (`gate.on: command_norm`), reads its two-leg clock at phase zero then while the clock
+    runs on (`gait_phase_legs` with `stand.mode: zero_phase`), and observes roll and pitch
+    computed from gravity (`gravity_euler`).
+  * A reading that fits one history window but does not reproduce the adapter is retried
+    frame by frame.
+* The probe now checks whether a port observes the harness's arm targets, and verification
+  moves them, so a port that does is no longer read as feeding constants.
 * Adapters run from a sandbox that links the benchmark's `policies/`, so ports that read
   or patch their model files at start (handoff, wbc_agile_velocity) construct; what they
   write stays out of the checkout. TensorRT's version macros are defined for ports that

@@ -376,3 +376,117 @@ def test_feet_clock_warps_stance_and_holds_at_a_zero_command():
         want.append(np.sin(2 * np.pi * warp_stance(np.array(feet), 0.6)))
     assert np.allclose(v, want)
     assert np.allclose(warp_stance(np.array([0.0, 0.3, 0.6, 0.8]), 0.6), [0, 0.25, 0.5, 0.75])
+
+
+@pytest.mark.parametrize("init", ["repeat_first", "zeros"])
+def test_an_explicit_chunk_layout(init):
+    """The current frame split around a history of earlier frames (HumanoidVerse's ASAP),
+    and a frame repeated in front of a history that holds it too (handoff)."""
+    from gaitkeeper.terms import ObservationBuilder, build_observation, lagged
+
+    s, q, a, cmd, ep, reset = _walk(T=30)
+    terms = [{"id": "joint_pos_rel", "dim": 2}, {"id": "velocity_commands", "dim": 3}]
+    chunks = [["joint_pos_rel", 0]] + [["joint_pos_rel", k] for k in (1, 2)]
+    chunks += [["velocity_commands", k] for k in (1, 2)] + [["velocity_commands", 0]]
+    c = _contract_for(terms, {"length": 1, "init": init, "chunks": chunks})
+    whole, _, cols = build_observation(s, c)
+    assert whole.shape == (30, 2 * 3 + 3 * 3)
+    qr = q - [0.1, -0.2]
+    for t in (0, 1, 2, 7, 25, 26, 29):
+        start = 25 if t >= 25 else 0
+        back = lambda v, k: (
+            v[t - k] if t - k >= start else (v[start] if init == "repeat_first" else 0 * v[0])
+        )  # noqa: E731
+        want = np.r_[qr[t], back(qr, 1), back(qr, 2), back(cmd, 1), back(cmd, 2), cmd[t]]
+        assert np.allclose(whole[t], want), t
+    assert cols["velocity_commands"].tolist() == list(range(6, 15))
+    b = ObservationBuilder(c)
+    for t in range(30):
+        got = b.step(
+            [1.0, 0, 0, 0],
+            np.zeros(3),
+            q[t],
+            np.zeros(2),
+            ["j0", "j1"],
+            cmd[t],
+            int(ep[t]),
+            s.prev_action[t],
+        )
+        assert np.allclose(got, whole[t]), t
+    assert np.allclose(
+        lagged(np.arange(4.0)[:, None], np.zeros(4, bool), 1, "zeros")[:, 0], [0, 0, 1, 2]
+    )
+
+
+def test_gravity_angles_and_masked_clocks():
+    from gaitkeeper.terms import term_values
+
+    T = 6
+    ang = np.array([0.0, 0.2, -0.3, 0.1, 0.0, 0.25])
+    quat = np.stack([np.cos(ang / 2), np.sin(ang / 2), np.zeros(T), np.zeros(T)], axis=1)  # roll
+    cmd = np.zeros((T, 3))
+    cmd[[1, 2, 4], 0] = 0.5
+    s = _state(quat, cmd=cmd)
+    terms = [
+        {"id": "gravity_euler", "dim": 2},
+        {
+            "id": "gait_phase_legs",
+            "dim": 4,
+            "params": {
+                "period": 1.0,
+                "stand": {"mode": "zero_phase", "norm": "norm3", "threshold": 0.1},
+            },
+        },
+    ]
+    v = term_values(s, terms, CTX)
+    assert np.allclose(v["gravity_euler"][:, 0], ang) and np.allclose(v["gravity_euler"][:, 1], 0)
+    legs = v["gait_phase_legs"]
+    assert np.allclose(legs[[0, 3, 5]], [0, 0, 1, 1])  # standing: phase zero for both legs
+    ph = 2 * np.pi * 0.02 * 2
+    assert np.allclose(legs[2], [np.sin(ph), np.sin(ph + np.pi), np.cos(ph), np.cos(ph + np.pi)])
+    # a gait clock the port's gate stops reads phase zero while shut
+    cmd4 = np.c_[cmd, [0, 1, 1, 0, 1, 0]]
+    s4 = _state(quat, cmd=cmd4)
+    g = term_values(
+        s4,
+        [
+            {
+                "id": "gait_phase",
+                "dim": 2,
+                "params": {"period": 0.5, "gate": "zero_phase", "arithmetic": "float64"},
+            }
+        ],
+        CTX,
+    )["gait_phase"]
+    assert np.allclose(g[[0, 3, 5]], [0.0, 1.0]) and np.allclose(
+        g[2], [np.sin(2 * np.pi * 0.04 / 0.5), np.cos(2 * np.pi * 0.04 / 0.5)]
+    )
+
+
+def test_joint_targets_the_harness_drives():
+    from gaitkeeper.terms import ObservationBuilder
+
+    terms = [
+        {
+            "id": "joint_target_rel",
+            "dim": 2,
+            "params": {"joints": ["j0", "j1", "arm"], "index": [2], "default": {"arm": 0.1}},
+        }
+    ]
+    terms[0]["dim"] = 1
+    c = _contract_for(terms)
+    b = ObservationBuilder(c)
+    assert b.extra_joints == ["arm"]
+    got = b.step(
+        [1.0, 0, 0, 0],
+        np.zeros(3),
+        np.zeros(3),
+        np.zeros(3),
+        ["j0", "j1", "arm"],
+        np.zeros(3),
+        0,
+        np.zeros(2),
+        None,
+        np.array([np.nan, np.nan, 0.6]),
+    )
+    assert np.allclose(got, [0.5])

@@ -624,6 +624,24 @@ class Runner:
         obs_names = list(self.names) + builder.extra_joints
         ex_q = np.array([m.joint(j).qposadr[0] for j in builder.extra_joints], dtype=int)
         ex_d = np.array([m.joint(j).dofadr[0] for j in builder.extra_joints], dtype=int)
+        # the drive target of each joint the observation reads beyond the policy's (where a
+        # term observes it): an unlisted joint's pose, or its trajectory
+        un_pose = {nm: b.unlisted[k][2] for k, nm in enumerate(b.unlisted_names)}
+        un_tr = {
+            nm: np.asarray(tr, dtype=float)
+            for nm, tr in (cfg.unlisted_trajectory or {}).items()
+            if nm in builder.extra_joints
+        }
+
+        def extra_targets(time_s: float) -> np.ndarray:
+            out = np.full(len(obs_names), np.nan)
+            for k, nm in enumerate(builder.extra_joints):
+                if nm in un_tr:
+                    out[len(self.names) + k] = np.interp(time_s, un_tr[nm][:, 0], un_tr[nm][:, 1])
+                elif nm in un_pose:
+                    out[len(self.names) + k] = un_pose[nm]
+            return out
+
         shaping = self.contract.get("policy_io.commands.base_velocity.shaping", None)
         gate_spec = self.contract.get("policy_io.commands.base_velocity.gate", None)
         gate = CommandGate(gate_spec, self.policy_dt) if gate_spec else None
@@ -708,7 +726,16 @@ class Runner:
             if len(ex_q):
                 qj, vj = np.r_[qj, d.qpos[ex_q]], np.r_[vj, d.qvel[ex_d]]
             obs = builder.step(
-                quat, w_b, qj, vj, obs_names, pcmd, t, prev_action, d.qvel[v0 : v0 + 3].copy()
+                quat,
+                w_b,
+                qj,
+                vj,
+                obs_names,
+                pcmd,
+                t,
+                prev_action,
+                d.qvel[v0 : v0 + 3].copy(),
+                extra_targets(time) if builder.extra_joints else None,
             )
             if cfg.policy_mode == "policy":
                 a = self.policy.step(obs)

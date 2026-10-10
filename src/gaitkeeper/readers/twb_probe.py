@@ -43,6 +43,10 @@ STANCE = np.array(
     + [0.2, 0.2, 0.0, 0.6, 0.0, 0.0, 0.0, 0.2, -0.2, 0.0, 0.6, 0.0, 0.0, 0.0]
 )
 POLICY_DT = 0.02  # main.cpp PERIOD_S
+# main.cpp (rhoyn/teleop-walking-benchmark@4ed23c2 on): the harness applies the policy's kp()
+# and kd() to every leg and waist motor (below ARM_LEFT_FIRST), and to the arms only when the
+# policy owns all 29 motors; other arm motors keep the harness's armature gains.
+ARM_LEFT_FIRST = 15
 DELTA = 1e-2
 WARM = 100  # 2 s: past start-up ramps (legged_rl_lab scales its actions in over 0.8 s)
 LAGS = 16
@@ -764,6 +768,14 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
     allm = [table[i] for i in range(NUM_MOTOR)]
     hold_kp, hold_kd = armature_gains(m, allm)
     stance = {allm[i]: float(STANCE[i]) for i in range(NUM_MOTOR)}
+
+    def harness_gains(mi: int) -> tuple[float, float]:
+        """The gains the harness applies to motor ``mi`` (main.cpp, after the crane)."""
+        nm = allm[mi]
+        if (mi < ARM_LEFT_FIRST or r.owned == NUM_MOTOR) and mi < r.gains_len:
+            return float(r.kp[mi]), float(r.kd[mi])
+        return hold_kp[nm], hold_kd[nm]
+
     detail = f"probed from {source} (gaitkeeper.readers.twb_probe)"
     out = {}
     for variant in ("trained", "port"):
@@ -891,7 +903,7 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
             kp[nm] = r.kp[mi] if known else hold_kp[nm]
             kd[nm] = r.kd[mi] if known else hold_kd[nm]
             if variant == "port" and mi >= r.owned:
-                kp[nm], kd[nm] = hold_kp[nm], hold_kd[nm]
+                kp[nm], kd[nm] = harness_gains(mi)
         c.set(
             "control.actuators",
             {
@@ -903,13 +915,14 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
                 "torque_limit_at": "actuator_force",
             },
             "file",
-            detail + ": kp(), kd(); the harness's armature gains past them",
+            detail + ": kp(), kd(); past owned() the harness's gains (kp() for legs and "
+            "waist, armature gains for arms)",
         )
         ext = []
         if variant == "port":
-            # The harness holds motors from owned() on at its stance with armature gains; the
-            # adapter itself holds owned motors whose action it discards, at its own target
-            # with the policy's gains.
+            # The harness holds motors from owned() on at its stance (with kp() on legs and
+            # waist, armature gains on arms); the adapter itself holds owned motors whose
+            # action it discards, at its own target with the policy's gains.
             held = [k for k, mi in enumerate(r.p2m) if mi >= r.owned or k in r.discarded]
             groups: dict[tuple[str, bool], list[int]] = {}
             for k in held:
@@ -924,8 +937,14 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
                             j: stance[j] if by_harness else float(r.hold_target[r.p2m[k]])
                             for j, k in zip(js, ks)
                         },
-                        "kp": {j: hold_kp[j] if by_harness else kp[j] for j in js},
-                        "kd": {j: hold_kd[j] if by_harness else kd[j] for j in js},
+                        "kp": {
+                            j: harness_gains(r.p2m[k])[0] if by_harness else kp[j]
+                            for j, k in zip(js, ks)
+                        },
+                        "kd": {
+                            j: harness_gains(r.p2m[k])[1] if by_harness else kd[j]
+                            for j, k in zip(js, ks)
+                        },
                         "obs": obs,
                     }
                 )
@@ -951,11 +970,15 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
                     "pose": {
                         nm: float(r.hold_target[mi[nm]]) if nm in own else stance[nm] for nm in rest
                     },
-                    "kp": {nm: r.kp[mi[nm]] if nm in own else hold_kp[nm] for nm in rest},
-                    "kd": {nm: r.kd[mi[nm]] if nm in own else hold_kd[nm] for nm in rest},
+                    "kp": {
+                        nm: r.kp[mi[nm]] if nm in own else harness_gains(mi[nm])[0] for nm in rest
+                    },
+                    "kd": {
+                        nm: r.kd[mi[nm]] if nm in own else harness_gains(mi[nm])[1] for nm in rest
+                    },
                     "note": "motors the policy does not list: below owned() the adapter holds "
-                    "them at its target with kp(); the harness holds the rest at its stance "
-                    "with armature gains",
+                    "them at its target with kp(); the harness holds the rest at its stance, "
+                    "with kp() on legs and waist and armature gains on arms",
                 },
                 "file",
                 detail + ": targets at zero action, kp(), owned()",

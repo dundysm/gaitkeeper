@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+* Benchmark port contracts follow the harness as of rhoyn/teleop-walking-benchmark@4ed23c2: legs
+  and waist the policy does not own are held at its `kp()`/`kd()`, arms at the harness's
+  armature gains unless the policy owns all 29 motors (the harness used armature gains for
+  every motor past `owned()`, which left a 12-joint policy's waist at kp about 28).
+
 ## 0.5.1
 
 Fixes from an external audit of 0.5.0.

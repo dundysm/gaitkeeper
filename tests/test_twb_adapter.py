@@ -136,3 +136,25 @@ def test_concurrent_builds_never_load_a_partial_library(tmp_path):
     assert out == ["ok"] * 8
     left = sorted(p.name for p in (tmp_path / "twb_adapters").iterdir())
     assert len(left) == 1 and left[0].endswith(".so"), left
+
+
+@needs_cxx
+def test_harness_holds_unowned_waist_at_the_policys_gains():
+    """main.cpp (benchmark@4ed23c2): legs and waist always take kp()/kd(); arms keep the
+    harness's armature gains unless the policy owns all 29 motors."""
+    import dataclasses
+
+    from assets import UMJ_G1, need
+
+    need(UMJ_G1)
+    from gaitkeeper.readers.twb_adapter import Adapter
+    from gaitkeeper.readers.twb_probe import contracts, probe
+
+    r = dataclasses.replace(probe(Adapter(TOY)), owned=12)  # waist now held by the harness
+    port = contracts(r, UMJ_G1, TOY)["port"]
+    held = {j: e for e in port.get("control.ownership.external") for j in e["joints"]}
+    assert held["waist_yaw_joint"]["kp"]["waist_yaw_joint"] == 200.0
+    assert held["waist_yaw_joint"]["kd"]["waist_yaw_joint"] == 5.0
+    assert held["waist_yaw_joint"]["pose"]["waist_yaw_joint"] == 0.0  # the harness stance
+    arm = port.get("control.unlisted")["kp"]["left_elbow_joint"]
+    assert 0 < arm < 100  # armature gains, not a policy gain

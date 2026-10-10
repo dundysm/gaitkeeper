@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import textwrap
 from pathlib import Path
 from typing import NoReturn
 
@@ -522,12 +523,35 @@ def cmd_adapter(args: argparse.Namespace) -> int:
     return 5
 
 
+def _wrap(sentence: str) -> list[str]:
+    """The sentences doctor prints, wrapped, so no line runs off a narrow terminal."""
+    from .bench import FINDING_WIDTH
+
+    return textwrap.wrap(sentence, width=FINDING_WIDTH) or [""]
+
+
+def _report_source(args: argparse.Namespace) -> str:
+    """Name the file the report is about, the way the run was asked for it.
+
+    A report is usually attached to a pull request, where the file is what identifies it;
+    the bare policy name reads as the command rather than the subject. The arguments are
+    tried in the order doctor resolves them, and ``--onnx`` names itself so the two paths
+    cannot be confused in a report.
+    """
+    if getattr(args, "policy", None):
+        return str(args.policy)
+    if getattr(args, "onnx", None):
+        return f"{args.onnx} (onnx)"
+    return "policy"
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Your policy in a MuJoCo scene: what the contract leaves open, where the policy does
     not respond to commands, and whether it survives a waypoint tour."""
     import math
 
     from .behavior import contract_header
+    from .bench import step_losses
     from .envelope import sweep
     from .tour import BENCH_ARMS, TourOptions, run_tour
 
@@ -598,16 +622,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         )
     else:
         verdict = "It survives the tour and tracks its commands in this runner."
-    for line in verdict.splitlines():
+    for line in _wrap(verdict):
         print(f"  {line}")
-    for (_, a), (label, b) in zip(rows, rows[1:]):
-        if b["mean_survival_s"] < a["mean_survival_s"] - 5:
-            print(
-                f"  {label.capitalize()} costs it {a['mean_survival_s'] - b['mean_survival_s']:.0f} s "
-                f"({a['mean_survival_s']:.1f} to {b['mean_survival_s']:.1f} s)."
-            )
-    print("Evidence L1: this runner, this model, these assumptions. For a cause, record a golden")
-    print("trace in the training simulator and run gaitkeeper verify (README: How it decides).")
+    losses = step_losses(rows)
+    for _, sentence in sorted(losses, reverse=True):
+        for line in _wrap(sentence):
+            print(f"  {line}")
+    for line in _wrap(
+        "Evidence L1: this runner, this model, these assumptions. For a cause, record a golden "
+        "trace in the training simulator and run gaitkeeper verify (README: How it decides)."
+    ):
+        print(line)
     if args.md:
         from .bench import doctor_markdown
 
@@ -620,6 +645,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                 env.findings,
                 rows,
                 verdict,
+                source=_report_source(args),
             )
         )
     if args.json:

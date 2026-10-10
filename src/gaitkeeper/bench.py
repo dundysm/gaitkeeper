@@ -40,6 +40,11 @@ STAGE_TEXT = {
 # A stage that costs less than this much mean survival is not called out.
 NOTABLE_S = 5.0
 
+# Findings are one sentence, but the terminal lines are short and the "costs it" notes
+# are built by joining two rows. Wrapped to a fixed column so a report or a terminal pasted
+# into a PR stays inside the 80-column markdown the rest of the project keeps to.
+FINDING_WIDTH = 72
+
 
 @dataclass
 class BenchReport:
@@ -118,6 +123,28 @@ class BenchReport:
         }
 
 
+def step_losses(rows: list[tuple[str, dict[str, Any]]]) -> list[str]:
+    """The "costs it N s" sentences for consecutive tour stages, largest first.
+
+    One place builds these so the terminal and the written report cannot disagree about
+    which stages cost survival. Each entry is (lost_seconds, sentence), so a caller that
+    wants a different order or a different threshold can use the number.
+    """
+    out = []
+    for (_, a), (label, b) in zip(rows, rows[1:]):
+        lost = a["mean_survival_s"] - b["mean_survival_s"]
+        if lost < NOTABLE_S:
+            continue
+        out.append(
+            (
+                lost,
+                f"{label.capitalize()} costs it {lost:.0f} s "
+                f"({a['mean_survival_s']:.1f} to {b['mean_survival_s']:.1f} s).",
+            )
+        )
+    return out
+
+
 def doctor_markdown(
     name: str,
     seconds: float,
@@ -126,14 +153,22 @@ def doctor_markdown(
     findings: list[str],
     rows: list[tuple[str, dict[str, Any]]],
     verdict: str,
+    source: str | None = None,
 ) -> str:
     """The doctor report as markdown, in the sections the command prints.
 
     BenchReport.markdown is the pattern: a heading, the evidence level, one table, then the
     lists. Doctor has no single table, so each section is its own block, and the verdict
     goes last so it reads as the answer the sections lead to.
+
+    The heading names the file the report is about, because a report is usually attached to
+    a pull request and the file is what identifies it there. The Summary repeats the tour
+    steps that cost survival, so the section reads on its own without scrolling back.
     """
     md = [f"# gaitkeeper doctor: {name}", ""]
+    if source:
+        md.append(f"Policy: `{source}`")
+        md.append("")
     md.append(f"Tour of {seconds:.0f} s per seed. Evidence L1 (this runner and model).")
 
     md += ["", "## Contract", ""]
@@ -152,6 +187,10 @@ def doctor_markdown(
         md += [f"- Finding    {f}" for f in findings]
     else:
         md.append("Tracks the commands it was swept with.")
+    losses = step_losses(rows)
+    if losses:
+        md += ["", "Where the time goes", ""]
+        md += [f"- {sentence}" for _, sentence in sorted(losses, reverse=True)]
 
     md += ["", "## Waypoint tour", ""]
     md += ["| Setting | Mean survival (s) | Complete | Pos err (cm) |", "|---|---|---|---|"]
@@ -162,6 +201,19 @@ def doctor_markdown(
         )
 
     md += ["", "## Summary", "", verdict, ""]
+    for _, sentence in sorted(losses, reverse=True):
+        md.append(sentence)
+    if losses:
+        md.append("")
+    if gaps:
+        # The verdict is a statement about this run, and this run filled the gap fields
+        # from defaults. Repeated here so a reader who reads only the Summary still learns
+        # that the answer rests on values no file supplied.
+        md.append(
+            f"{len(gaps)} field(s) no file states, filled from defaults for this run; the "
+            "Contract section lists them."
+        )
+        md.append("")
     md.append(
         "Evidence L1: this runner, this model, these assumptions. For a cause, record a golden "
         "trace in the training simulator and run gaitkeeper verify (README: How it decides)."

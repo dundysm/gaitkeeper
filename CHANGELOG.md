@@ -4,6 +4,12 @@
 
 Fixes from an external audit of 0.5.0.
 
+* `doctor --md` writes a report: a heading naming the policy file, the contract gaps, the
+  command response, the waypoint tour, and the verdict last, followed by the tour stages
+  that cost survival. `doctor --json` gains `summary` and `ok`, so a piped caller no longer
+  has to read the verdict out of the exit code. The terminal prints the same sentences,
+  wrapped to a fixed width.
+
 * Boundary C applies the contract's processed-target clip, as the runner does. A correct
   trace from a deploy that clips its targets (Unitree deploy.yaml, Isaac Lab, legged_gym,
   adapters) no longer fails C with a false CONTRACT verdict.

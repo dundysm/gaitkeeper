@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+* `gaitkeeper doctor --onnx policy.onnx --config <config> --mjcf scene.xml`: one command for
+  your own policy. Reports the contract fields no file states, the dead zones of the
+  command response, and survival on a waypoint tour with the arms its own, moved at
+  random, and punched.
+* `--config` on every command that reads a contract: an Isaac Lab env.yaml, a Unitree
+  deploy.yaml, a unitree_rl_gym config, a legged_gym config or a contract, by content.
+
 ## 0.4.0
 
 * A reader for the env.yaml Isaac Lab writes with a training run (`--isaaclab-env

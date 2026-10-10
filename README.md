@@ -96,6 +96,31 @@ Finding  TASK_FAILURE_OBSERVED / BEHAVIORAL_LIMITATION  (evidence L1, exit 5)
 That is a finding about the policy in this runner, not a verdict on anyone's
 harness. See [Evidence levels](#evidence-levels).
 
+## Run it on your policy
+
+Give it the exported policy, whatever config you trained or deployed it with, and a
+MuJoCo scene of the robot:
+
+```bash
+gaitkeeper doctor --onnx policy.onnx --config params/env.yaml --mjcf scene.xml
+```
+
+`--config` is read by content: the `env.yaml` Isaac Lab saves with a training run, a
+Unitree `deploy.yaml`, a unitree_rl_gym deploy config, a legged_gym config (`.py`, with
+`--legged-gym-base legged_robot_config.py`) or a gaitkeeper contract. `doctor` then says
+three things, in about a minute on a laptop:
+
+1. **Contract**: which fields no file states (the runner assumes defaults for those).
+2. **Command response**: dead zones, commands the policy ignores in this runner.
+3. **Waypoint tour**: survival on a closed-loop tour, then with the arms moved at random,
+   then with punches.
+
+For the unitree_rl_lab G1 policy on unitree_mujoco's scene it finds a dead zone below
+0.2 m/s and no turning in place, survives the tour with its own arms (90 of 90 s), and
+lasts 15 s once the arms are moved at random. When it falls with nothing added, the next
+step is `gaitkeeper bench --upstream <the authors' config>` to separate the port from the
+policy, or a golden trace and `gaitkeeper verify` for a cause.
+
 ## Evidence levels
 
 | Level | Name | Backed by |
@@ -120,6 +145,7 @@ traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
 | Command | What it does | Level it can reach |
 |---|---|---|
 | `demo` | The issue 145 setup, end to end | L1 |
+| `doctor` | Your policy and its config in a MuJoCo scene: contract gaps, dead zones, a waypoint tour | L1 |
 | `fetch` | Pinned policies and MJCF scenes, sha256 checked | |
 | `inspect` | Contract from an mjlab ONNX export, a Unitree `deploy.yaml` (G1 29 dof, H1), a unitree_rl_gym deploy config, a legged_gym training config or an Isaac Lab env.yaml | a reading |
 | `verify <trace>` | Boundaries B, A, C | L2 on a golden trace, L1 on a harness log or a self trace |

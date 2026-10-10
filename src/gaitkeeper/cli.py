@@ -53,7 +53,16 @@ def _read_any(
 
 
 def _contract(args: argparse.Namespace) -> Contract:
-    if args.contract:
+    if getattr(args, "config", None):
+        cfg = args.config
+        if cfg.endswith(".py"):
+            args.legged_gym = cfg
+            args.config = None
+            return _contract(args)
+        order = getattr(args, "joint_order", None)
+        c = _read_any(cfg, args.robot, order)
+        print(f"config: {Path(cfg).name} read as {c.get('source.format', '?')}", file=sys.stderr)
+    elif args.contract:
         c = Contract.load(args.contract)
     elif getattr(args, "isaaclab_env", None):
         from .readers.isaaclab_env import read_isaaclab_env
@@ -500,6 +509,103 @@ def cmd_adapter(args: argparse.Namespace) -> int:
     return 5
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Your policy in a MuJoCo scene: what the contract leaves open, where the policy does
+    not respond to commands, and whether it survives a waypoint tour."""
+    import math
+
+    from .behavior import contract_header
+    from .envelope import sweep
+    from .tour import BENCH_ARMS, TourOptions, run_tour
+
+    c = _contract(args)
+    path = args.policy or args.onnx
+    if not path:
+        sys.exit("give --onnx (or --policy)")
+    print(contract_header(c))
+    lim_path = "policy_io.commands.base_velocity.limit"
+    if c.get(lim_path, None) is None:
+        trained = c.get("policy_io.commands.base_velocity.trained", None)
+        lim = trained or {"vx": [-0.5, 1.0], "vy": [-0.3, 0.3], "wz": [-0.5, 0.5]}
+        c.set(lim_path, lim, "default", "trained ranges" if trained else "gaitkeeper's default")
+        print(f"command limits not stated: using {'the trained ranges' if trained else lim}")
+    gaps = [p for p, v in c.provenance.items() if v.source == "unknown"]
+    print("\n1. Contract")
+    if gaps:
+        print(f"  {len(gaps)} field(s) no file states; results below assume defaults for them:")
+        for g in sorted(gaps)[:12]:
+            print(f"    {g}")
+    else:
+        print("  every field the runner needs comes from a file")
+    print("\n2. Command response (does it do what it is told?)")
+    env = sweep(c, args.mjcf, path, backend=args.backend, workers=args.workers)
+    dead = [d["text"] for d in env.dead.values() if d.get("text")]
+    for t in dead:
+        print(f"  DEAD ZONE  {t}")
+    for f in env.findings:
+        print(f"  Finding    {f}")
+    if not dead and not env.findings:
+        print("  tracks the commands it was swept with")
+    print("\n3. Waypoint tour (closed loop, the teleop-walking-benchmark's draws)")
+    names = list(c.get("policy_io.joints.names"))
+    has_arms = any(j in BENCH_ARMS for j in names)
+    rows = []
+    stages = [("arms its own", "policy", "none")]
+    if has_arms and not args.quick:
+        stages.append(("arms moved at random", "walk", "none"))
+    if not args.quick:
+        stages.append(("with punches", "walk" if has_arms else "policy", "benchmark"))
+    for label, arms, punches in stages:
+        o = TourOptions(arms=arms, punches=punches, backend=args.backend)
+        r = run_tour(c, args.mjcf, path, list(range(args.seeds)), o, args.workers)
+        rows.append((label, r))
+        pos = "-" if math.isnan(r["pos_err_cm"]) else f"{r['pos_err_cm']:.0f} cm"
+        print(
+            f"  {label:<22} mean survival {r['mean_survival_s']:5.1f} of {r['seconds']:.0f} s, "
+            f"complete {r['complete']}/{len(r['runs'])}, waypoint error {pos}"
+        )
+    own = rows[0][1]
+    print("\nSummary")
+    ok = own["complete"] == len(own["runs"]) and not dead
+    if own["mean_survival_s"] < own["seconds"] - 5:
+        print(
+            "  It falls on the tour with nothing added. Check the contract gaps above first, then"
+        )
+        print(
+            "  the policy itself: gaitkeeper bench --upstream <the authors' config> separates the two."
+        )
+    elif dead:
+        print(
+            "  It survives but ignores some commands (dead zones above): a harness that sends small"
+        )
+        print("  commands will see it stand still. That is the policy, if the contract is right.")
+    else:
+        print("  It survives the tour and tracks its commands in this runner.")
+    for (_, a), (label, b) in zip(rows, rows[1:]):
+        if b["mean_survival_s"] < a["mean_survival_s"] - 5:
+            print(
+                f"  {label.capitalize()} costs it {a['mean_survival_s'] - b['mean_survival_s']:.0f} s "
+                f"({a['mean_survival_s']:.1f} to {b['mean_survival_s']:.1f} s)."
+            )
+    print("Evidence L1: this runner, this model, these assumptions. For a cause, record a golden")
+    print("trace in the training simulator and run gaitkeeper verify (README: How it decides).")
+    if args.json:
+        Path(args.json).write_text(
+            json.dumps(
+                {
+                    "command": "doctor",
+                    "unknown_fields": gaps,
+                    "dead_zones": dead,
+                    "findings": env.findings,
+                    "tour": {k: v for k, v in rows},
+                },
+                indent=1,
+                default=str,
+            )
+        )
+    return 0 if ok else 5
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
     import yaml
 
@@ -777,6 +883,7 @@ _PATH_FLAGS = (
     "legged_gym_base",
     "urdf",
     "env_py",
+    "config",
 )
 
 
@@ -822,6 +929,11 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def contract_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--config",
+            help="any config gaitkeeper reads, by content: Isaac Lab env.yaml, Unitree deploy.yaml, "
+            "unitree_rl_gym config, legged_gym config (.py, with --legged-gym-base), or a contract",
+        )
         p.add_argument("--contract", help="contract.yaml")
         p.add_argument("--onnx", help="exported policy; its metadata is read as the contract")
         p.add_argument("--yaml", help="deploy.yaml exported next to the policy")
@@ -958,6 +1070,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--md", help="write the report as markdown")
     p.add_argument("--workers", type=int)
     p.set_defaults(fn=cmd_bench)
+
+    p = sub.add_parser(
+        "doctor",
+        help="your policy in a MuJoCo scene: contract gaps, dead zones, and a waypoint tour",
+    )
+    sim_args(p)
+    p.add_argument("--seeds", type=int, default=3)
+    p.add_argument("--quick", action="store_true", help="the tour without arm motion or punches")
+    p.add_argument("--workers", type=int)
+    p.set_defaults(fn=cmd_doctor)
 
     p = sub.add_parser(
         "adapter",

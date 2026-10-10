@@ -111,3 +111,33 @@ def test_bench_runs_an_upstream_stage_with_its_controller_filled(tmp_path, capsy
     assert "The policy's contract against the upstream config: no differences" in text
     d = json.loads(out.read_text())
     assert list(d["stages"]) == ["upstream", "own"]
+
+
+def test_doctor_reads_a_config_by_content_and_runs_the_checks(tmp_path, capsys):
+    from assets import UMJ_G1, URL_G1, need
+
+    need(UMJ_G1, URL_G1 / "deploy.yaml")
+    from gaitkeeper.cli import main
+
+    out = tmp_path / "d.json"
+    code = main(
+        [
+            "doctor",
+            "--config",
+            str(URL_G1 / "deploy.yaml"),
+            "--onnx",
+            str(URL_G1 / "policy.onnx"),
+            "--mjcf",
+            str(UMJ_G1),
+            "--seeds",
+            "1",
+            "--quick",
+            "--json",
+            str(out),
+        ]
+    )
+    text = capsys.readouterr().out
+    assert "1. Contract" in text and "DEAD ZONE" in text and "arms its own" in text
+    d = json.loads(out.read_text())
+    assert d["command"] == "doctor" and d["dead_zones"]
+    assert code == 5  # dead zones: not a clean bill

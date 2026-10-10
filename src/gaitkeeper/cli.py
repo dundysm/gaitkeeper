@@ -455,6 +455,13 @@ def cmd_bench(args: argparse.Namespace) -> int:
     path = args.policy or args.onnx
     if not path:
         sys.exit("give --policy (or --onnx)")
+    upstream = None
+    if args.upstream:
+        upstream = Contract.load(args.upstream)
+    elif args.upstream_deploy:
+        from .readers.unitree_deploy import read_unitree_deploy
+
+        upstream, _ = read_unitree_deploy(args.upstream_deploy, None, robot=args.robot)
     wps = None
     if args.waypoints:
         d = yaml.safe_load(Path(args.waypoints).read_text())
@@ -472,6 +479,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
         path,
         list(range(args.seeds)),
         port=port,
+        upstream=upstream,
         stages=args.stages.split(",") if args.stages else None,
         waypoints=wps,
         point_s=args.point_s,
@@ -695,6 +703,8 @@ _PATH_FLAGS = (
     "port",
     "waypoints",
     "adapter",
+    "upstream",
+    "upstream_deploy",
 )
 
 
@@ -855,6 +865,10 @@ def main(argv: list[str] | None = None) -> int:
         "--adapter",
         help="teleop-walking-benchmark policy.cpp: read both contracts from it (needs a C++ compiler)",
     )
+    p.add_argument(
+        "--upstream", help="contract of the policy as its authors trained or deployed it"
+    )
+    p.add_argument("--upstream-deploy", help="the same, from the authors' Unitree deploy.yaml")
     p.add_argument("--stages", help="comma separated subset of own,arms_hold,arms_walk,punches")
     p.add_argument("--waypoints", help="YAML list of [x, y, yaw]; default the benchmark's draws")
     p.add_argument("--point-s", type=float, default=5.0)

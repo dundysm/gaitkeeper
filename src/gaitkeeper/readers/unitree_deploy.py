@@ -212,6 +212,8 @@ def read_unitree_deploy(
     # -- observations
     obs = dict(y.get("observations") or {})
     gym_history = bool(obs.pop("use_gym_history", False))
+    # wty-yy/unitree_cpp_deploy's fork: scale before clip when set (observation_manager.h:125)
+    scale_first = bool(obs.pop("scale_first", False))
     terms: list[dict[str, Any]] = []
     hist = set()
     for key, t in obs.items():
@@ -260,7 +262,7 @@ def read_unitree_deploy(
                 "order": "oldest_first",
                 "init": "repeat_first",
             },
-            "clip_then_scale": True,
+            "clip_then_scale": not scale_first,
         },
         "file",
         "deploy.yaml observations, in file order",

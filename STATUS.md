@@ -167,6 +167,11 @@ hand-written contract. What changes a policy's score:
 * schoi, wcompton, stepdown, g1_gym, nanog1 and dm_agile fall within 1.5 to 7 s with the
   adapter's own values. For schoi and wcompton the upstream deploy gains (waist 300) make
   them stand, measured earlier against their upstream configs.
+* With the upstream config as a first stage (six ports with one published: schoi, g1_gym,
+  dm_agile, dm_march, clobot, wty_cpp), `bench` separates the port from the policy: schoi
+  completes the tour with its authors' config (waist kp 300) and falls in 4.7 s with the
+  adapter's (waist kp 28.5); clobot, dm_march and wty_cpp complete it under both; dm_agile
+  and g1_gym fall under their own configs too, so their scores are the policy's.
 * Reading the adapters also found what reading their source had missed: clobot clips
   actions to +-5, dm_march clamps every target to +-1 rad, g1_gym clamps targets to joint
   limits, legged_rl_lab ramps its actions in over 0.8 s, and mturan33 reads the harness's

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+* `gaitkeeper bench --upstream contract.yaml` (or `--upstream-deploy deploy.yaml`): runs the
+  policy as its authors trained or deployed it first, compares the bench contract's values
+  with it, and names the step from upstream to port when it costs survival. An upstream
+  config that does not state the drive runs with the bench contract's, like for like.
+* The Unitree deploy.yaml reader takes `scale_first` (wty-yy/unitree_cpp_deploy's fork:
+  scale before clip).
 * `gaitkeeper adapter policies/<name>/policy.cpp --mjcf ...`: reads a
   teleop-walking-benchmark adapter without parsing it. The CUDA adapter is compiled for the
   CPU with a shim (kernels run as loops, the TensorRT engine is replaced by a recorder), then

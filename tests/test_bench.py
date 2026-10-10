@@ -83,3 +83,31 @@ def test_unlisted_diff_reports_how_the_port_holds_the_arms():
     assert lines[0] == "unlisted pose: same on 2 joint(s)"
     assert lines[1] == "unlisted kp: 1 of 2 joint(s) differ; largest a port 1.3 against 40"
     assert unlisted_diff(_C(None), c(1.0))[0].endswith("own contract holds them (control.unlisted)")
+
+
+def test_attribution_starts_from_the_upstream_config():
+    st = {"upstream": _st(20, 2), "own": _st(3), "punches": _st(2.5)}
+    f = attribute(st, 20.0)
+    assert f[0].startswith("switching from the upstream config to the policy's contract")
+    assert "17.0 s" in f[0]
+
+
+def test_bench_runs_an_upstream_stage_with_its_controller_filled(tmp_path, capsys):
+    from assets import UMJ_G1, URL_G1, need
+
+    need(UMJ_G1, URL_G1 / "deploy.yaml")
+    from gaitkeeper.cli import main
+
+    wp = tmp_path / "wp.yaml"
+    wp.write_text("waypoints:\n  - [0.3, 0.0, 0.0]\n")
+    out = tmp_path / "b.json"
+    dep, onnx = str(URL_G1 / "deploy.yaml"), str(URL_G1 / "policy.onnx")
+    argv = ["bench", "--deploy", dep, "--onnx", onnx, "--upstream-deploy", dep]
+    argv += ["--mjcf", str(UMJ_G1), "--waypoints", str(wp), "--point-s", "2", "--seeds", "1"]
+    argv += ["--stages", "own", "--json", str(out)]
+    main(argv)
+    text = capsys.readouterr().out
+    assert "upstream config (as trained or deployed)" in text
+    assert "The policy's contract against the upstream config: no differences" in text
+    d = json.loads(out.read_text())
+    assert list(d["stages"]) == ["upstream", "own"]

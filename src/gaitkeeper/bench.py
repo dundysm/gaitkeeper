@@ -29,6 +29,7 @@ STAGES: dict[str, dict[str, str]] = {
     "punches": {"arms": "walk", "punches": "benchmark"},
 }
 STAGE_TEXT = {
+    "upstream": "upstream config (as trained or deployed)",
     "own": "own setup",
     "arms_hold": "harness holds the arms",
     "arms_walk": "harness walks the arms",
@@ -119,7 +120,7 @@ class BenchReport:
 
 def attribute(stages: dict[str, dict[str, Any]], seconds: float) -> list[str]:
     """Name the steps of the ladder that cost survival, largest first."""
-    order = [k for k in STAGES if k in stages]
+    order = (["upstream"] if "upstream" in stages else []) + [k for k in STAGES if k in stages]
     steps = []
     for a, b in zip(order, order[1:]):
         lost = stages[a]["mean_survival_s"] - stages[b]["mean_survival_s"]
@@ -138,6 +139,8 @@ def attribute(stages: dict[str, dict[str, Any]], seconds: float) -> list[str]:
         if lost < NOTABLE_S:
             continue
         what = {
+            "own": "switching from the upstream config to the policy's contract here (gains, "
+            "poses, observation)",
             "arms_hold": "taking the arms away from the policy (held at the harness stance, harness gains)",
             "arms_walk": "the random arm walk",
             "punches": "punching",
@@ -188,6 +191,12 @@ def unlisted_diff(port: Any, own: Any) -> list[str]:
     return out
 
 
+def _compact(header: str, lines: list[str]) -> list[str]:
+    """One line when nothing differs."""
+    same = all(("no joint differs" in ln) or ("same on" in ln) for ln in lines)
+    return [header + " no differences"] if same else [header] + lines
+
+
 def run_bench(
     contract: Any,
     mjcf: str,
@@ -195,6 +204,7 @@ def run_bench(
     seeds: list[int],
     port: Any | None = None,
     stages: list[str] | None = None,
+    upstream: Any | None = None,
     waypoints: list[tuple[float, float, float]] | None = None,
     point_s: float = 5.0,
     workers: int | None = None,
@@ -236,6 +246,34 @@ def run_bench(
         rep.seconds = r["seconds"]
         rep.stages[key] = r
 
+    if upstream is not None:
+        upstream = upstream.copy()
+        filled = []
+        for k in ("kind", "pd_period", "integrator", "torque_limit_at"):
+            path = f"control.actuators.{k}"
+            if upstream.get(path, None) is None and contract.get(path, None) is not None:
+                upstream.set(
+                    path,
+                    contract.get(path),
+                    "default",
+                    "the policy contract's controller, so the two runs differ only in values",
+                )
+                filled.append(k)
+        if filled:
+            rep.notes.append(
+                "the upstream config does not state the drive "
+                f"({', '.join(filled)}): run with the policy contract's, like for like"
+            )
+        one("upstream", upstream, "policy", "none", "real")
+        from .deviation import compare
+
+        try:
+            dev = compare(contract, upstream, reference_name="the upstream config")
+            lines = [ln.replace(": deploy ", ": contract ") for ln in dev.lines()[1:]]
+        except KeyError as e:
+            lines = [f"not comparable ({e})"]
+        lines += [ln.replace("port ", "contract ") for ln in unlisted_diff(contract, upstream)]
+        rep.deviation += _compact("The policy's contract against the upstream config:", lines)
     for key in stages:
         st = STAGES[key]
         arms = st["arms"]
@@ -250,13 +288,12 @@ def run_bench(
         from .deviation import compare
 
         try:
-            dev = compare(port, contract, reference_name="the policy's own contract")
-            lines = dev.lines()
-            lines[0] = "Port values against the policy's own contract (the port runs its values):"
-            rep.deviation = lines
+            lines = compare(port, contract, reference_name="the policy's own contract").lines()[1:]
+            lines = [ln.replace(": deploy ", ": port ") for ln in lines]
         except KeyError as e:
-            rep.deviation = [f"port against the policy's own contract: not comparable ({e})"]
-        rep.deviation += unlisted_diff(port, contract)
+            lines = [f"not comparable ({e})"]
+        lines += unlisted_diff(port, contract)
+        rep.deviation += _compact("Port values against the policy's contract:", lines)
         own_ext = (port.get("control.ownership", None) or {}).get("external", []) or []
         for e in own_ext:
             e = e if isinstance(e, dict) else e.__dict__

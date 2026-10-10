@@ -273,7 +273,7 @@ policy's dead zone and punches explain the score, measured in MuJoCo) and
 unitree_rl_lab issue 149 (asking for a LICENSE file). Notes on the `efferent`
 log format and a list of exporter keys are drafts, not sent.
 
-**Release.** 0.3.0 is on PyPI (`pip install "gaitkeeper[sim]"`).
+**Release.** 0.4.0 is on PyPI (`pip install "gaitkeeper[sim]"`).
 `.github/workflows/release.yml` publishes each `v*` tag through trusted
 publishing; a release created on GitHub makes the tag.
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 * A reader for the env.yaml Isaac Lab writes with a training run (`--isaaclab-env
   params/env.yaml [--joint-order deploy.yaml]`): regex patterns over joint names resolved

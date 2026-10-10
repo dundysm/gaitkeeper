@@ -125,6 +125,8 @@ traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
 
 ### Benchmark a port
 
+Results for the teleop-walking-benchmark ports: [G1 Port Audit](https://dundysm.github.io/gaitkeeper/results/).
+
 Someone else's harness runs your policy and it falls. `bench` runs the
 teleop-walking-benchmark tour one change at a time, from the policy as its authors
 deployed it to the full benchmark, and says which step costs the survival:

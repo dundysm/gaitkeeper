@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Why each Unitree G1 walking policy in teleop-walking-benchmark scores what it does: ports read from their adapter code and run one change at a time with gaitkeeper.">
+<title>G1 Port Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column, a summary band, then a list of policies that open in place. */
+:root {
+  --bg: #f4f6f8; --panel: #ffffff; --ink: #121820; --muted: #566273; --rule: #d6dce4;
+  --accent: #1f5f8b; --bar: #9fb3c8; --bar-up: #1f5f8b;
+  --c-policy: #5d6b7d; --c-port: #b4372b; --c-arms: #a3650a; --c-walk: #c98a12;
+  --c-punch: #7a5bb0; --c-unclear: #8a94a3;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f141a; --panel: #161d25; --ink: #e6ebf1; --muted: #9aa6b5; --rule: #2a3440;
+  --accent: #6fb3e0; --bar: #3e5166; --bar-up: #6fb3e0;
+  --c-policy: #8f9db0; --c-port: #ef6f5f; --c-arms: #e0a03a; --c-walk: #f0c050;
+  --c-punch: #ad92e0; --c-unclear: #7d8796; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f141a; --panel: #161d25; --ink: #e6ebf1; --muted: #9aa6b5; --rule: #2a3440;
+  --accent: #6fb3e0; --bar: #3e5166; --bar-up: #6fb3e0;
+  --c-policy: #8f9db0; --c-port: #ef6f5f; --c-arms: #e0a03a; --c-walk: #f0c050;
+  --c-punch: #ad92e0; --c-unclear: #7d8796; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--f-body); margin: 0; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; }
+h1, h2 { font-family: var(--f-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 800; line-height: 1.05; }
+h2 { font-size: 1.35rem; font-weight: 700; margin-bottom: 12px; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--f-mono); font-size: 0.86em; }
+.eyebrow { font: 600 0.72rem/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+header { display: grid; gap: 14px; margin-bottom: 36px; }
+.lede { font-size: 1.08rem; color: var(--ink); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font: 0.8rem var(--f-mono); }
+section { margin-top: 44px; display: grid; gap: 14px; }
+.band { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 760px) { .band { grid-template-columns: 1fr; } }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 18px; min-width: 0; display: grid; gap: 12px; }
+.stack { display: flex; height: 26px; border-radius: 3px; overflow: hidden; background: var(--rule); }
+.stack span { display: block; height: 100%; }
+.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 16px; font-size: 0.86rem; }
+.legend div { display: flex; gap: 8px; align-items: baseline; }
+.sw { width: 10px; height: 10px; border-radius: 2px; flex: none; transform: translateY(1px); }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.big { font: 700 2rem/1 var(--f-display); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 600 0.74rem/1 var(--f-mono); letter-spacing: 0.02em; padding: 5px 8px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
+.list { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+details { border-bottom: 1px solid var(--rule); }
+summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 9.5rem 7.5rem 128px minmax(0, 1fr) 4.6rem 4.6rem; gap: 14px; align-items: center; padding-block: 12px; }
+summary::-webkit-details-marker { display: none; }
+summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+summary .name { font: 600 0.95rem var(--f-mono); }
+summary .verdict { color: var(--muted); font-size: 0.9rem; min-width: 0; }
+summary .s { text-align: right; }
+.head { display: grid; grid-template-columns: 9.5rem 7.5rem 128px minmax(0, 1fr) 4.6rem 4.6rem; gap: 14px; padding-block: 8px; color: var(--muted); font: 600 0.7rem var(--f-mono); letter-spacing: 0.05em; text-transform: uppercase; }
+.head .s { text-align: right; }
+@media (max-width: 820px) {
+  summary, .head { grid-template-columns: minmax(0, 1fr) auto; }
+  summary .verdict, summary svg, .head span:nth-child(n+3) { grid-column: 1 / -1; }
+  summary .s, .head { display: none; }
+}
+.detail { display: grid; gap: 14px; padding: 4px 0 20px; }
+.stages { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 0.86rem; min-width: 480px; }
+th, td { text-align: left; padding: 6px 14px 6px 0; border-bottom: 1px solid var(--rule); }
+th { font: 600 0.7rem var(--f-mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+td.num, th.num { text-align: right; }
+pre { margin: 0; overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; font: 0.78rem/1.5 var(--f-mono); color: var(--ink); }
+ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; max-width: 75ch; }
+.notread { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 8px 14px; font-size: 0.9rem; }
+.notread .name { font: 600 0.9rem var(--f-mono); }
+.defs { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 8px 16px; font-size: 0.92rem; }
+@media (max-width: 560px) { .defs, .notread { grid-template-columns: 1fr; } }
+svg text { fill: var(--muted); font: 10px var(--f-mono); }
+.scatter .pt { fill: var(--accent); }
+.scatter .ax { stroke: var(--rule); }
+.scatter .diag { stroke: var(--muted); stroke-dasharray: 3 4; }
+.spark .b { fill: var(--bar); }
+.spark .bu { fill: var(--bar-up); }
+.spark .base { stroke: var(--rule); }
+@media (prefers-reduced-motion: no-preference) { details[open] .detail { animation: in .18s ease-out; } }
+@keyframes in { from { opacity: .4; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <span class="eyebrow">gaitkeeper 0.4.0 · teleop-walking-benchmark</span>
+  <h1>G1 Port Audit</h1>
+  <p class="lede">Why each Unitree G1 walking policy in rhoyn's teleop-walking-benchmark scores what it does. Each port was read from its own adapter code, then the benchmark's 90 s waypoint tour was run one change at a time: the policy as its authors configured it, the port's values, the harness taking the arms, the random arm walk, the punches.</p>
+  <div class="meta"><span>rhoyn/teleop-walking-benchmark@6d331a8</span><span>3 seeds per stage</span><span>MuJoCo, the benchmark's g1_29dof.xml</span><span>evidence L1</span><span>2026-10-10</span></div>
+</header>
+
+<section>
+  <div class="band">
+    <div class="panel">
+      <span class="eyebrow">What stops each policy</span>
+      <div class="stack"><span style="width:2.94%; background: var(--c-port)" title="Port values: 1"></span><span style="width:5.88%; background: var(--c-arms)" title="Arm handoff: 2"></span><span style="width:23.53%; background: var(--c-walk)" title="Arm walk: 8"></span><span style="width:8.82%; background: var(--c-policy)" title="Policy: 3"></span><span style="width:5.88%; background: var(--c-unclear)" title="Unclear: 2"></span></div>
+      <div class="legend"><div><span class="sw" style="background: var(--c-port)"></span><span><b class="num">1</b> Port values: the port&#x27;s values break it</span></div><div><span class="sw" style="background: var(--c-arms)"></span><span><b class="num">2</b> Arm handoff: trained to drive its arms; the harness takes them</span></div><div><span class="sw" style="background: var(--c-walk)"></span><span><b class="num">8</b> Arm walk: stands, but the random arm motion knocks it down</span></div><div><span class="sw" style="background: var(--c-policy)"></span><span><b class="num">3</b> Policy: falls under its authors&#x27; own config</span></div><div><span class="sw" style="background: var(--c-unclear)"></span><span><b class="num">2</b> Unclear: falls with the port&#x27;s values; no upstream config read</span></div><div><span class="sw" style="background: var(--rule)"></span><span><b class="num">18</b> not benched (reasons below)</span></div></div>
+    </div>
+    <div class="panel">
+      <span class="eyebrow">Agreement with the benchmark</span>
+      <div style="display:flex; gap: 22px; align-items: baseline; flex-wrap: wrap">
+        <span><span class="big num">0.94</span> <span class="eyebrow">Pearson</span></span>
+        <span><span class="big num">0.89</span> <span class="eyebrow">Spearman</span></span>
+      </div>
+      <svg class="scatter" viewBox="0 0 300 220" width="100%" role="img" aria-label="gaitkeeper survival against the benchmark's"><line class="ax" x1="34" y1="186" x2="290" y2="186"/><line class="ax" x1="34" y1="10" x2="34" y2="186"/><line class="diag" x1="34" y1="186" x2="290.0" y2="10.0"/><text x="34.0" y="200" text-anchor="middle">0</text><text x="28" y="189.0" text-anchor="end">0</text><text x="119.33333333333334" y="200" text-anchor="middle">30</text><text x="28" y="130.33333333333334" text-anchor="end">30</text><text x="204.66666666666669" y="200" text-anchor="middle">60</text><text x="28" y="71.66666666666667" text-anchor="end">60</text><text x="290.0" y="200" text-anchor="middle">90</text><text x="28" y="13.0" text-anchor="end">90</text><text x="162.0" y="216" text-anchor="middle">gaitkeeper, port under the full benchmark (s)</text><text transform="translate(10 93.0) rotate(-90)" text-anchor="middle">benchmark, MuJoCo (s)</text><circle class="pt" cx="38.6" cy="182.5" r="4"><title>clobot: 1.6 s here, 1.8 s in the benchmark</title></circle><circle class="pt" cx="40.0" cy="175.9" r="4"><title>dm_agile: 2.1 s here, 5.2 s in the benchmark</title></circle><circle class="pt" cx="56.5" cy="173.4" r="4"><title>dm_march: 7.9 s here, 6.4 s in the benchmark</title></circle><circle class="pt" cx="40.0" cy="181.2" r="4"><title>g1_gym: 2.1 s here, 2.5 s in the benchmark</title></circle><circle class="pt" cx="53.3" cy="174.7" r="4"><title>holosoma: 6.8 s here, 5.8 s in the benchmark</title></circle><circle class="pt" cx="52.5" cy="170.8" r="4"><title>huru: 6.5 s here, 7.8 s in the benchmark</title></circle><circle class="pt" cx="63.3" cy="178.3" r="4"><title>legged_rl_lab: 10.3 s here, 3.9 s in the benchmark</title></circle><circle class="pt" cx="42.0" cy="181.9" r="4"><title>nanog1: 2.8 s here, 2.1 s in the benchmark</title></circle><circle class="pt" cx="61.9" cy="147.4" r="4"><title>rl_gym: 9.8 s here, 19.7 s in the benchmark</title></circle><circle class="pt" cx="114.2" cy="136.4" r="4"><title>rl_lab: 28.2 s here, 25.4 s in the benchmark</title></circle><circle class="pt" cx="46.8" cy="175.1" r="4"><title>rl_mjlab: 4.5 s here, 5.6 s in the benchmark</title></circle><circle class="pt" cx="183.3" cy="97.7" r="4"><title>robomimic: 52.5 s here, 45.1 s in the benchmark</title></circle><circle class="pt" cx="44.2" cy="178.6" r="4"><title>schoi: 3.6 s here, 3.8 s in the benchmark</title></circle><circle class="pt" cx="38.3" cy="181.9" r="4"><title>stepdown: 1.5 s here, 2.1 s in the benchmark</title></circle><circle class="pt" cx="38.8" cy="182.0" r="4"><title>wcompton: 1.7 s here, 2.0 s in the benchmark</title></circle><circle class="pt" cx="98.0" cy="119.3" r="4"><title>wty_cpp: 22.5 s here, 34.1 s in the benchmark</title></circle></svg>
+      <p style="font-size: .84rem; color: var(--muted)">16 policies. Survival of the port under the full benchmark here, against the benchmark's own MuJoCo runs, with no contract written by hand.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Verdicts</h2>
+  <p style="color: var(--muted); font-size: .92rem">Bars: mean survival at each stage, out of 90 s (the first, darker bar is the authors' config where one was read). Open a row for the stage table, what reading the adapter found, and the values that differ.</p>
+  <div class="list">
+    <div class="head"><span>Policy</span><span>Stops it</span><span>Stages</span><span>Verdict</span><span class="s">Bench (s)</span><span class="s">Here (s)</span></div>
+    
+<details id="schoi">
+  <summary><span class="name">schoi</span><span class="chip" style="color: var(--c-port)">Port values</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="1.0" width="16" height="32.0" class="bu"><title>Authors&#x27; config: 90.0 s</title></rect><rect x="23" y="31.3" width="16" height="1.7" class="b"><title>Port&#x27;s values: 4.7 s</title></rect><rect x="45" y="32" width="16" height="1" class="b" opacity=".35"><title>Harness holds arms: not run</title></rect><rect x="67" y="31.5" width="16" height="1.5" class="b"><title>Random arm walk: 4.2 s</title></rect><rect x="89" y="31.5" width="16" height="1.5" class="b"><title>Plus punches: 3.6 s</title></rect><rect x="111" y="31.5" width="16" height="1.5" class="b"><title>Port, full benchmark: 3.6 s</title></rect></svg><span class="verdict">The port&#x27;s values cost 85 s against the authors&#x27; config (90 to 4.7 s).</span><span class="s num">3.8</span><span class="s num">3.6</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Authors&#x27; config</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Port&#x27;s values</td><td class="num">4.7</td><td class="num">0/3</td></tr><tr><td>Random arm walk</td><td class="num">4.2</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">3.6</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">3.6</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">4.7</td><td class="num">0/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/schoi/policy.cpp</code>: 47 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action, gait_phase), history 1, 12 actions, owned() = 12.</p>
+    
+    <p>Upstream config: g1_sim2real.yaml (hand contract).</p>
+    <pre>The policy&#x27;s contract against the upstream config:
+unlisted pose: 8 of 17 joint(s) differ; largest left_elbow_joint contract 0.6 against 0.97
+unlisted kp: 17 of 17 joint(s) differ; largest waist_pitch_joint contract 28.5 against 300
+unlisted kd: 17 of 17 joint(s) differ; largest waist_pitch_joint contract 1.814 against 3
+Port values against the policy&#x27;s contract: no differences</pre>
+  </div>
+</details>
+<details id="clobot">
+  <summary><span class="name">clobot</span><span class="chip" style="color: var(--c-arms)">Arm handoff</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="1.0" width="16" height="32.0" class="bu"><title>Authors&#x27; config: 90.0 s</title></rect><rect x="23" y="1.0" width="16" height="32.0" class="b"><title>Port&#x27;s values: 90.0 s</title></rect><rect x="45" y="31.5" width="16" height="1.5" class="b"><title>Harness holds arms: 2.2 s</title></rect><rect x="67" y="31.5" width="16" height="1.5" class="b"><title>Random arm walk: 1.6 s</title></rect><rect x="89" y="31.5" width="16" height="1.5" class="b"><title>Plus punches: 1.6 s</title></rect><rect x="111" y="31.5" width="16" height="1.5" class="b"><title>Port, full benchmark: 1.6 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (90 s); the harness taking the arms costs 88 s.</span><span class="s num">1.8</span><span class="s num">1.6</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Authors&#x27; config</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Port&#x27;s values</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Harness holds arms</td><td class="num">2.2</td><td class="num">0/3</td></tr><tr><td>Random arm walk</td><td class="num">1.6</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">1.6</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">1.6</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">2.2</td><td class="num">0/3</td></tr></tbody></table></div>
+    <ul><li>The port alone, arms still and no punches, costs 88 s.</li></ul>
+    <p>Read from <code>policies/clobot/policy.cpp</code>: 500 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action, gait_phase_legs), history 5, 29 actions, owned() = 15.</p>
+    <p class="eyebrow">What reading the adapter found</p><ul><li>actions are clipped to +-5 before scaling</li></ul>
+    <p>Upstream config: env.yaml (Isaac Lab training run).</p>
+    <pre>The policy&#x27;s contract against the upstream config:
+scale: 29 of 29 joints differ; largest relative +0.10% (left_hip_roll_joint)
+  left_hip_roll_joint and 3 more: contract 0.351, the upstream config 0.3506614664, diff +0.0003385 (+0.10%)
+  left_shoulder_pitch_joint and 15 more: contract 0.439, the upstream config 0.4385773139, diff +0.0004227 (+0.10%)
+  right_hip_yaw_joint and 4 more: contract 0.548, the upstream config 0.5475464652, diff +0.0004535 (+0.08%)
+  left_wrist_pitch_joint and 3 more: contract 0.0745, the upstream config 0.07450087033, diff -8.703e-07 (-0.00%)
+kp: 29 of 29 joints differ; largest relative +0.35% (right_shoulder_pitch_joint)
+  right_shoulder_pitch_joint and 9 more: contract 14.3, the upstream config 14.2506231, diff +0.04938 (+0.35%)
+  left_wrist_pitch_joint and 3 more: contract 16.8, the upstream config 16.77832748, diff +0.02167 (+0.13%)
+  left_hip_yaw_joint and 4 more: contract 40.2, the upstream config 40.17923847, diff +0.02076 (+0.05%)
+  right_ankle_roll_joint and 5 more: contract 28.5, the upstream config 28.5012462, diff -0.001246 (-0.00%)
+  right_knee_joint and 3 more: contract 99.1, the upstream config 99.09842778, diff +0.001572 (+0.00%)
+kd: 29 of 29 joints differ; largest relative -0.25% (waist_roll_joint)
+  waist_roll_joint and 5 more: contract 1.81, the upstream config 1.814445687, diff -0.004446 (-0.25%)
+  left_wrist_pitch_joint and 3 more: contract 1.07, the upstream config 1.068141502, diff +0.001858 (+0.17%)
+  left_hip_yaw_joint and 4 more: contract 2.56, the upstream config 2.557889765, diff +0.00211 (+0.08%)
+  left_shoulder_roll_joint and 9 more: contract 0.907, the upstream config 0.9072228433, diff -0.0002228 (-0.02%)
+  right_knee_joint and 3 more: contract 6.31, the upstream config 6.308801853, diff +0.001198 (+0.02%)
+Port values against the policy&#x27;s contract:
+kp: 14 of 29 joints differ; largest relative -0.35% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: port 14.2506, the policy&#x27;s own contract 14.3, diff -0.04938 (-0.35%)
+  left_wrist_pitch_joint and 3 more: port 16.7783, the policy&#x27;s own contract 16.8, diff -0.02167 (-0.13%)
+kd: 14 of 29 joints differ; largest relative -0.17% (left_wrist_yaw_joint)
+  left_wrist_yaw_joint and 3 more: port 1.06814, the policy&#x27;s own contract 1.07, diff -0.001858 (-0.17%)
+  left_shoulder_pitch_joint and 9 more: port 0.907223, the policy&#x27;s own contract 0.907, diff +0.0002228 (+0.02%)
+port: harness drives 14 joint(s) (hold), policy sees them as real: left_shoulder_pitch_joint, right_shoulder_pitch_joint, left_shoulder_roll_joint, right_shoulder_roll_joint, left_shoulder_yaw_joint, right_shoulder_yaw_joint ...</pre>
+  </div>
+</details>
+<details id="legged_rl_lab">
+  <summary><span class="name">legged_rl_lab</span><span class="chip" style="color: var(--c-arms)">Arm handoff</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="32" width="16" height="1" class="b" opacity=".35"><title>Authors&#x27; config: not run</title></rect><rect x="23" y="4.3" width="16" height="28.7" class="b"><title>Port&#x27;s values: 80.8 s</title></rect><rect x="45" y="29.2" width="16" height="3.8" class="b"><title>Harness holds arms: 10.6 s</title></rect><rect x="67" y="28.5" width="16" height="4.5" class="b"><title>Random arm walk: 12.6 s</title></rect><rect x="89" y="29.3" width="16" height="3.7" class="b"><title>Plus punches: 10.3 s</title></rect><rect x="111" y="29.3" width="16" height="3.7" class="b"><title>Port, full benchmark: 10.3 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (81 s); the harness taking the arms costs 70 s.</span><span class="s num">3.9</span><span class="s num">10.3</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Port&#x27;s values</td><td class="num">80.8</td><td class="num">2/3</td></tr><tr><td>Harness holds arms</td><td class="num">10.6</td><td class="num">0/3</td></tr><tr><td>Random arm walk</td><td class="num">12.6</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">10.3</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">10.3</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">10.6</td><td class="num">0/3</td></tr></tbody></table></div>
+    <ul><li>The port alone, arms still and no punches, costs 70 s.</li></ul>
+    <p>Read from <code>policies/legged_rl_lab/policy.cpp</code>: 96 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action), history 1, 29 actions, owned() = 15.</p>
+    <p class="eyebrow">What reading the adapter found</p><ul><li>the action gain at the first step is 0, 0.25 after 2 s: the port ramps its actions in</li></ul>
+    <p>No upstream config read.</p>
+    <pre>Port values against the policy&#x27;s own contract (the port runs its values):
+kp: 14 of 29 joints differ; largest relative -64.37% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: deploy 14.2506, the policy&#x27;s own contract 40, diff -25.75 (-64.37%)
+  left_wrist_pitch_joint and 3 more: deploy 16.7783, the policy&#x27;s own contract 40, diff -23.22 (-58.05%)
+kd: 14 of 29 joints differ; largest relative -9.28% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: deploy 0.907223, the policy&#x27;s own contract 1, diff -0.09278 (-9.28%)
+  left_wrist_pitch_joint and 3 more: deploy 1.06814, the policy&#x27;s own contract 1, diff +0.06814 (+6.81%)
+port: harness drives 14 joint(s) (hold), policy sees them as real: left_shoulder_pitch_joint, right_shoulder_pitch_joint, left_shoulder_roll_joint, right_shoulder_roll_joint, left_shoulder_yaw_joint, right_shoulder_yaw_joint ...</pre>
+  </div>
+</details>
+<details id="dm_march">
+  <summary><span class="name">dm_march</span><span class="chip" style="color: var(--c-walk)">Arm walk</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="1.0" width="16" height="32.0" class="bu"><title>Authors&#x27; config: 90.0 s</title></rect><rect x="23" y="1.0" width="16" height="32.0" class="b"><title>Port&#x27;s values: 90.0 s</title></rect><rect x="45" y="1.0" width="16" height="32.0" class="b"><title>Harness holds arms: 90.0 s</title></rect><rect x="67" y="20.1" width="16" height="12.9" class="b"><title>Random arm walk: 36.3 s</title></rect><rect x="89" y="27.2" width="16" height="5.8" class="b"><title>Plus punches: 16.2 s</title></rect><rect x="111" y="30.2" width="16" height="2.8" class="b"><title>Port, full benchmark: 7.9 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (90 s); the random arm walk costs 54 s.</span><span class="s num">6.4</span><span class="s num">7.9</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Authors&#x27; config</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Port&#x27;s values</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Harness holds arms</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Random arm walk</td><td class="num">36.3</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">16.2</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">7.9</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">60.6</td><td class="num">2/3</td></tr></tbody></table></div>
+    <ul><li>The port alone, arms still and no punches, costs 29 s.</li></ul>
+    <p>Read from <code>policies/dm_march/policy.cpp</code>: 490 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action, gait_phase), history 5, 29 actions, owned() = 15.</p>
+    
+    <p>Upstream config: env.yaml (Isaac Lab training run).</p>
+    <pre>The policy&#x27;s contract against the upstream config: no differences
+Port values against the policy&#x27;s contract:
+kp: 14 of 29 joints differ; largest relative -64.37% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: port 14.2506, the policy&#x27;s own contract 40, diff -25.75 (-64.37%)
+  left_wrist_pitch_joint and 3 more: port 16.7783, the policy&#x27;s own contract 40, diff -23.22 (-58.05%)
+kd: 14 of 29 joints differ; largest relative -9.28% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: port 0.907223, the policy&#x27;s own contract 1, diff -0.09278 (-9.28%)
+  left_wrist_pitch_joint and 3 more: port 1.06814, the policy&#x27;s own contract 1, diff +0.06814 (+6.81%)
+port: harness drives 14 joint(s) (hold), policy sees them as echo_action: left_shoulder_pitch_joint, right_shoulder_pitch_joint, left_shoulder_roll_joint, right_shoulder_roll_joint, left_shoulder_yaw_joint, right_shoulder_yaw_joint ...</pre>
+  </div>
+</details>
+<details id="holosoma">
+  <summary><span class="name">holosoma</span><span class="chip" style="color: var(--c-walk)">Arm walk</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="32" width="16" height="1" class="b" opacity=".35"><title>Authors&#x27; config: not run</title></rect><rect x="23" y="1.0" width="16" height="32.0" class="b"><title>Port&#x27;s values: 90.0 s</title></rect><rect x="45" y="1.0" width="16" height="32.0" class="b"><title>Harness holds arms: 90.0 s</title></rect><rect x="67" y="30.5" width="16" height="2.5" class="b"><title>Random arm walk: 7.0 s</title></rect><rect x="89" y="30.6" width="16" height="2.4" class="b"><title>Plus punches: 6.8 s</title></rect><rect x="111" y="30.6" width="16" height="2.4" class="b"><title>Port, full benchmark: 6.8 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (90 s); the random arm walk costs 83 s.</span><span class="s num">5.8</span><span class="s num">6.8</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Port&#x27;s values</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Harness holds arms</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Random arm walk</td><td class="num">7.0</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">6.8</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">6.8</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">90.0</td><td class="num">3/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/holosoma/policy.cpp</code>: 100 observations (last_action, base_ang_vel, velocity_commands*, gait_phase_legs*, joint_pos_rel, joint_vel_rel, projected_gravity, gait_phase_legs_2*), history 1, 29 actions, owned() = 15.</p>
+    
+    <p>No upstream config read.</p>
+    <pre>Port values against the policy&#x27;s own contract (the port runs its values):
+kp: 14 of 29 joints differ; largest relative -0.00% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: deploy 14.2506, the policy&#x27;s own contract 14.251, diff -0.0003769 (-0.00%)
+  left_wrist_yaw_joint and 3 more: deploy 16.7783, the policy&#x27;s own contract 16.778, diff +0.0003275 (+0.00%)
+kd: 14 of 29 joints differ; largest relative +0.00% (left_wrist_yaw_joint)
+  left_wrist_yaw_joint and 3 more: deploy 1.06814, the policy&#x27;s own contract 1.0681, diff +4.15e-05 (+0.00%)
+  left_elbow_joint and 9 more: deploy 0.907223, the policy&#x27;s own contract 0.90722, diff +2.843e-06 (+0.00%)
+port: harness drives 14 joint(s) (hold), policy sees them as real: left_shoulder_pitch_joint, left_shoulder_roll_joint, left_shoulder_yaw_joint, left_elbow_joint, left_wrist_roll_joint, left_wrist_pitch_joint ...</pre>
+  </div>
+</details>
+<details id="huru">
+  <summary><span class="name">huru</span><span class="chip" style="color: var(--c-walk)">Arm walk</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="32" width="16" height="1" class="b" opacity=".35"><title>Authors&#x27; config: not run</title></rect><rect x="23" y="1.0" width="16" height="32.0" class="b"><title>Port&#x27;s values: 90.0 s</title></rect><rect x="45" y="1.0" width="16" height="32.0" class="b"><title>Harness holds arms: 90.0 s</title></rect><rect x="67" y="29.7" width="16" height="3.3" class="b"><title>Random arm walk: 9.3 s</title></rect><rect x="89" y="30.7" width="16" height="2.3" class="b"><title>Plus punches: 6.5 s</title></rect><rect x="111" y="30.7" width="16" height="2.3" class="b"><title>Port, full benchmark: 6.5 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (90 s); the random arm walk costs 81 s.</span><span class="s num">7.8</span><span class="s num">6.5</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Port&#x27;s values</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Harness holds arms</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Random arm walk</td><td class="num">9.3</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">6.5</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">6.5</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">90.0</td><td class="num">3/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/huru/policy.cpp</code>: 99 observations (base_lin_vel, base_ang_vel, projected_gravity, joint_pos_rel, joint_vel_rel, last_action, velocity_commands), history 1, 29 actions, owned() = 15.</p>
+    
+    <p>No upstream config read.</p>
+    <pre>Port values against the policy&#x27;s own contract (the port runs its values):
+kp: 14 of 29 joints differ; largest relative -0.00% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: deploy 14.2506, the policy&#x27;s own contract 14.251, diff -0.0003769 (-0.00%)
+  left_wrist_yaw_joint and 3 more: deploy 16.7783, the policy&#x27;s own contract 16.778, diff +0.0003275 (+0.00%)
+kd: 14 of 29 joints differ; largest relative +0.02% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: deploy 0.907223, the policy&#x27;s own contract 0.907, diff +0.0002228 (+0.02%)
+  left_wrist_yaw_joint and 3 more: deploy 1.06814, the policy&#x27;s own contract 1.068, diff +0.0001415 (+0.01%)
+port: harness drives 14 joint(s) (hold), policy sees them as real: left_shoulder_pitch_joint, left_shoulder_roll_joint, left_shoulder_yaw_joint, left_elbow_joint, left_wrist_roll_joint, left_wrist_pitch_joint ...</pre>
+  </div>
+</details>
+<details id="rl_gym">
+  <summary><span class="name">rl_gym</span><span class="chip" style="color: var(--c-walk)">Arm walk</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="1.0" width="16" height="32.0" class="bu"><title>Authors&#x27; config: 90.0 s</title></rect><rect x="23" y="5.2" width="16" height="27.8" class="b"><title>Port&#x27;s values: 78.2 s</title></rect><rect x="45" y="32" width="16" height="1" class="b" opacity=".35"><title>Harness holds arms: not run</title></rect><rect x="67" y="25.0" width="16" height="8.0" class="b"><title>Random arm walk: 22.4 s</title></rect><rect x="89" y="29.5" width="16" height="3.5" class="b"><title>Plus punches: 9.8 s</title></rect><rect x="111" y="29.5" width="16" height="3.5" class="b"><title>Port, full benchmark: 9.8 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (78 s); the random arm walk costs 56 s.</span><span class="s num">19.7</span><span class="s num">9.8</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Authors&#x27; config</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Port&#x27;s values</td><td class="num">78.2</td><td class="num">1/3</td></tr><tr><td>Random arm walk</td><td class="num">22.4</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">9.8</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">9.8</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">78.2</td><td class="num">1/3</td></tr></tbody></table></div>
+    <ul><li>The port&#x27;s values cost 12 s against the authors&#x27; config (90 to 78.2 s).</li></ul>
+    <p>Read from <code>policies/rl_gym/policy.cpp</code>: 47 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action, gait_phase), history 1, 12 actions, owned() = 15.</p>
+    
+    <p>Upstream config: configs/g1.yaml (unitree_rl_gym).</p>
+    <pre>The policy&#x27;s contract against the upstream config:
+phase clock: contract runs -1 policy steps (-20 ms, -9 deg of a 0.8 s gait) ahead of training (boundary A deviation)
+unlisted pose: 6 of 17 joint(s) differ; largest left_elbow_joint contract 0.6 against 0
+unlisted kp: 17 of 17 joint(s) differ; largest left_elbow_joint contract 14.25 against 500
+unlisted kd: 17 of 17 joint(s) differ; largest left_elbow_joint contract 0.9072 against 10
+Port values against the policy&#x27;s contract: no differences</pre>
+  </div>
+</details>
+<details id="rl_lab">
+  <summary><span class="name">rl_lab</span><span class="chip" style="color: var(--c-walk)">Arm walk</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="32" width="16" height="1" class="b" opacity=".35"><title>Authors&#x27; config: not run</title></rect><rect x="23" y="1.2" width="16" height="31.8" class="b"><title>Port&#x27;s values: 89.3 s</title></rect><rect x="45" y="1.0" width="16" height="32.0" class="b"><title>Harness holds arms: 90.0 s</title></rect><rect x="67" y="28.9" width="16" height="4.1" class="b"><title>Random arm walk: 11.4 s</title></rect><rect x="89" y="29.5" width="16" height="3.5" class="b"><title>Plus punches: 9.9 s</title></rect><rect x="111" y="23.0" width="16" height="10.0" class="b"><title>Port, full benchmark: 28.2 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (89 s); the random arm walk costs 79 s.</span><span class="s num">25.4</span><span class="s num">28.2</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Port&#x27;s values</td><td class="num">89.3</td><td class="num">2/3</td></tr><tr><td>Harness holds arms</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Random arm walk</td><td class="num">11.4</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">9.9</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">28.2</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">90.0</td><td class="num">3/3</td></tr></tbody></table></div>
+    <ul><li>The port survives 18 s longer than the clean contract under the full benchmark: it hides the arm motion from the policy.</li></ul>
+    <p>Read from <code>policies/rl_lab/policy.cpp</code>: 480 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action), history 5, 29 actions, owned() = 15.</p>
+    <p class="eyebrow">What reading the adapter found</p><ul><li>actions are clipped to +-10 before scaling</li></ul>
+    <p>No upstream config read.</p>
+    <pre>Port values against the policy&#x27;s own contract (the port runs its values):
+kp: 14 of 29 joints differ; largest relative -64.37% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: deploy 14.2506, the policy&#x27;s own contract 40, diff -25.75 (-64.37%)
+  left_wrist_pitch_joint and 3 more: deploy 16.7783, the policy&#x27;s own contract 40, diff -23.22 (-58.05%)
+kd: 14 of 29 joints differ; largest relative -90.93% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: deploy 0.907223, the policy&#x27;s own contract 10, diff -9.093 (-90.93%)
+  left_wrist_pitch_joint and 3 more: deploy 1.06814, the policy&#x27;s own contract 10, diff -8.932 (-89.32%)
+port: harness drives 14 joint(s) (hold), policy sees them as echo_action: left_shoulder_pitch_joint, right_shoulder_pitch_joint, left_shoulder_roll_joint, right_shoulder_roll_joint, left_shoulder_yaw_joint, right_shoulder_yaw_joint ...</pre>
+  </div>
+</details>
+<details id="rl_mjlab">
+  <summary><span class="name">rl_mjlab</span><span class="chip" style="color: var(--c-walk)">Arm walk</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="32" width="16" height="1" class="b" opacity=".35"><title>Authors&#x27; config: not run</title></rect><rect x="23" y="1.0" width="16" height="32.0" class="b"><title>Port&#x27;s values: 90.0 s</title></rect><rect x="45" y="1.0" width="16" height="32.0" class="b"><title>Harness holds arms: 90.0 s</title></rect><rect x="67" y="30.9" width="16" height="2.1" class="b"><title>Random arm walk: 5.8 s</title></rect><rect x="89" y="31.4" width="16" height="1.6" class="b"><title>Plus punches: 4.5 s</title></rect><rect x="111" y="31.4" width="16" height="1.6" class="b"><title>Port, full benchmark: 4.5 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (90 s); the random arm walk costs 84 s.</span><span class="s num">5.6</span><span class="s num">4.5</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Port&#x27;s values</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Harness holds arms</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Random arm walk</td><td class="num">5.8</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">4.5</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">4.5</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">90.0</td><td class="num">3/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/rl_mjlab/policy.cpp</code>: 98 observations (base_ang_vel, projected_gravity, velocity_commands, gait_phase, joint_pos_rel, joint_vel_rel, last_action), history 1, 29 actions, owned() = 15.</p>
+    
+    <p>No upstream config read.</p>
+    <pre>Port values against the policy&#x27;s own contract (the port runs its values):
+kp: 14 of 29 joints differ; largest relative -0.35% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: deploy 14.2506, the policy&#x27;s own contract 14.3, diff -0.04938 (-0.35%)
+  left_wrist_yaw_joint and 3 more: deploy 16.7783, the policy&#x27;s own contract 16.8, diff -0.02167 (-0.13%)
+kd: 14 of 29 joints differ; largest relative -2.90% (left_wrist_yaw_joint)
+  left_wrist_yaw_joint and 3 more: deploy 1.06814, the policy&#x27;s own contract 1.1, diff -0.03186 (-2.90%)
+  left_elbow_joint and 9 more: deploy 0.907223, the policy&#x27;s own contract 0.9, diff +0.007223 (+0.80%)
+port: harness drives 14 joint(s) (hold), policy sees them as real: left_shoulder_pitch_joint, left_shoulder_roll_joint, left_shoulder_yaw_joint, left_elbow_joint, left_wrist_roll_joint, left_wrist_pitch_joint ...</pre>
+  </div>
+</details>
+<details id="robomimic">
+  <summary><span class="name">robomimic</span><span class="chip" style="color: var(--c-walk)">Arm walk</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="32" width="16" height="1" class="b" opacity=".35"><title>Authors&#x27; config: not run</title></rect><rect x="23" y="1.0" width="16" height="32.0" class="b"><title>Port&#x27;s values: 90.0 s</title></rect><rect x="45" y="1.0" width="16" height="32.0" class="b"><title>Harness holds arms: 90.0 s</title></rect><rect x="67" y="31.2" width="16" height="1.8" class="b"><title>Random arm walk: 5.0 s</title></rect><rect x="89" y="31.1" width="16" height="1.9" class="b"><title>Plus punches: 5.4 s</title></rect><rect x="111" y="14.3" width="16" height="18.7" class="b"><title>Port, full benchmark: 52.5 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (90 s); the random arm walk costs 85 s.</span><span class="s num">45.1</span><span class="s num">52.5</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Port&#x27;s values</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Harness holds arms</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Random arm walk</td><td class="num">5.0</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">5.4</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">52.5</td><td class="num">1/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">90.0</td><td class="num">3/3</td></tr></tbody></table></div>
+    <ul><li>The port survives 47 s longer than the clean contract under the full benchmark: it hides the arm motion from the policy.</li></ul>
+    <p>Read from <code>policies/robomimic/policy.cpp</code>: 96 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action), history 1, 29 actions, owned() = 15.</p>
+    <p class="eyebrow">What reading the adapter found</p><ul><li>actions are clipped to +-100 before scaling</li></ul>
+    <p>No upstream config read.</p>
+    <pre>Port values against the policy&#x27;s own contract (the port runs its values):
+port: harness drives 14 joint(s) (hold), policy sees them as default: left_shoulder_pitch_joint, right_shoulder_pitch_joint, left_shoulder_roll_joint, right_shoulder_roll_joint, left_shoulder_yaw_joint, right_shoulder_yaw_joint ...</pre>
+  </div>
+</details>
+<details id="wty_cpp">
+  <summary><span class="name">wty_cpp</span><span class="chip" style="color: var(--c-walk)">Arm walk</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="1.0" width="16" height="32.0" class="bu"><title>Authors&#x27; config: 90.0 s</title></rect><rect x="23" y="1.0" width="16" height="32.0" class="b"><title>Port&#x27;s values: 90.0 s</title></rect><rect x="45" y="1.0" width="16" height="32.0" class="b"><title>Harness holds arms: 90.0 s</title></rect><rect x="67" y="27.3" width="16" height="5.7" class="b"><title>Random arm walk: 15.9 s</title></rect><rect x="89" y="28.2" width="16" height="4.8" class="b"><title>Plus punches: 13.6 s</title></rect><rect x="111" y="25.0" width="16" height="8.0" class="b"><title>Port, full benchmark: 22.5 s</title></rect></svg><span class="verdict">Stands and tracks in its own setup (90 s); the random arm walk costs 74 s.</span><span class="s num">34.1</span><span class="s num">22.5</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Authors&#x27; config</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Port&#x27;s values</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Harness holds arms</td><td class="num">90.0</td><td class="num">3/3</td></tr><tr><td>Random arm walk</td><td class="num">15.9</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">13.6</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">22.5</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">90.0</td><td class="num">3/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/wty_cpp/policy.cpp</code>: 480 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action), history 5, 29 actions, owned() = 15.</p>
+    <p class="eyebrow">What reading the adapter found</p><ul><li>actions are clipped to +-10 before scaling</li></ul>
+    <p>Upstream config: deploy.yaml (Unitree).</p>
+    <pre>The policy&#x27;s contract against the upstream config:
+kp: 23 of 29 joints differ; largest relative +0.00% (left_elbow_joint)
+  left_elbow_joint and 3 more: deploy 14.251, the upstream config 14.2506, diff +0.0004 (+0.00%)
+  left_wrist_pitch_joint and 3 more: deploy 16.778, the upstream config 16.7783, diff -0.0003 (-0.00%)
+  right_ankle_pitch_joint and 5 more: deploy 28.501, the upstream config 28.5012, diff -0.0002 (-0.00%)
+  left_hip_yaw_joint and 4 more: deploy 40.179, the upstream config 40.1792, diff -0.0002 (-0.00%)
+  right_hip_roll_joint and 3 more: deploy 99.098, the upstream config 99.0984, diff -0.0004 (-0.00%)
+Port values against the policy&#x27;s contract:
+kp: 14 of 29 joints differ; largest relative -71.50% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 5 more: deploy 14.2506, the policy&#x27;s own contract 50, diff -35.75 (-71.50%)
+  left_elbow_joint and 3 more: deploy 14.2506, the policy&#x27;s own contract 14.251, diff -0.0003769 (-0.00%)
+  left_wrist_yaw_joint and 3 more: deploy 16.7783, the policy&#x27;s own contract 16.778, diff +0.0003275 (+0.00%)
+kd: 14 of 29 joints differ; largest relative +0.00% (left_wrist_yaw_joint)
+  left_wrist_yaw_joint and 3 more: deploy 1.06814, the policy&#x27;s own contract 1.0681, diff +4.15e-05 (+0.00%)
+  left_elbow_joint and 9 more: deploy 0.907223, the policy&#x27;s own contract 0.9072, diff +2.284e-05 (+0.00%)
+port: harness drives 14 joint(s) (hold), policy sees them as echo_action: left_shoulder_pitch_joint, left_shoulder_roll_joint, left_shoulder_yaw_joint, left_elbow_joint, left_wrist_roll_joint, left_wrist_pitch_joint ...</pre>
+  </div>
+</details>
+<details id="dm_agile">
+  <summary><span class="name">dm_agile</span><span class="chip" style="color: var(--c-policy)">Policy</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="31.4" width="16" height="1.6" class="bu"><title>Authors&#x27; config: 4.6 s</title></rect><rect x="23" y="31.4" width="16" height="1.6" class="b"><title>Port&#x27;s values: 4.5 s</title></rect><rect x="45" y="31.5" width="16" height="1.5" class="b"><title>Harness holds arms: 1.7 s</title></rect><rect x="67" y="31.5" width="16" height="1.5" class="b"><title>Random arm walk: 1.7 s</title></rect><rect x="89" y="31.5" width="16" height="1.5" class="b"><title>Plus punches: 1.4 s</title></rect><rect x="111" y="31.5" width="16" height="1.5" class="b"><title>Port, full benchmark: 2.1 s</title></rect></svg><span class="verdict">Falls under its authors&#x27; own config (4.6 s of 90): the score belongs to the policy, not the port.</span><span class="s num">5.2</span><span class="s num">2.1</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Authors&#x27; config</td><td class="num">4.6</td><td class="num">0/3</td></tr><tr><td>Port&#x27;s values</td><td class="num">4.5</td><td class="num">0/3</td></tr><tr><td>Harness holds arms</td><td class="num">1.7</td><td class="num">0/3</td></tr><tr><td>Random arm walk</td><td class="num">1.7</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">1.4</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">2.1</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">1.8</td><td class="num">0/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/dm_agile/policy.cpp</code>: 480 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action), history 5, 29 actions, owned() = 15.</p>
+    <p class="eyebrow">What reading the adapter found</p><ul><li>actions are clipped to +-10 before scaling</li></ul>
+    <p>Upstream config: env.yaml (Isaac Lab training run).</p>
+    <pre>The policy&#x27;s contract against the upstream config: no differences
+Port values against the policy&#x27;s contract:
+kp: 14 of 29 joints differ; largest relative -64.37% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: port 14.2506, the policy&#x27;s own contract 40, diff -25.75 (-64.37%)
+  left_wrist_pitch_joint and 3 more: port 16.7783, the policy&#x27;s own contract 40, diff -23.22 (-58.05%)
+kd: 14 of 29 joints differ; largest relative -9.28% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 9 more: port 0.907223, the policy&#x27;s own contract 1, diff -0.09278 (-9.28%)
+  left_wrist_pitch_joint and 3 more: port 1.06814, the policy&#x27;s own contract 1, diff +0.06814 (+6.81%)
+port: harness drives 14 joint(s) (hold), policy sees them as echo_action: left_shoulder_pitch_joint, right_shoulder_pitch_joint, left_shoulder_roll_joint, right_shoulder_roll_joint, left_shoulder_yaw_joint, right_shoulder_yaw_joint ...</pre>
+  </div>
+</details>
+<details id="g1_gym">
+  <summary><span class="name">g1_gym</span><span class="chip" style="color: var(--c-policy)">Policy</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="31.3" width="16" height="1.7" class="bu"><title>Authors&#x27; config: 4.7 s</title></rect><rect x="23" y="30.5" width="16" height="2.5" class="b"><title>Port&#x27;s values: 7.0 s</title></rect><rect x="45" y="31.5" width="16" height="1.5" class="b"><title>Harness holds arms: 3.5 s</title></rect><rect x="67" y="31.5" width="16" height="1.5" class="b"><title>Random arm walk: 1.6 s</title></rect><rect x="89" y="31.5" width="16" height="1.5" class="b"><title>Plus punches: 2.1 s</title></rect><rect x="111" y="31.5" width="16" height="1.5" class="b"><title>Port, full benchmark: 2.1 s</title></rect></svg><span class="verdict">Falls under its authors&#x27; own config (4.7 s of 90): the score belongs to the policy, not the port.</span><span class="s num">2.5</span><span class="s num">2.1</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Authors&#x27; config</td><td class="num">4.7</td><td class="num">0/3</td></tr><tr><td>Port&#x27;s values</td><td class="num">7.0</td><td class="num">0/3</td></tr><tr><td>Harness holds arms</td><td class="num">3.5</td><td class="num">0/3</td></tr><tr><td>Random arm walk</td><td class="num">1.6</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">2.1</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">2.1</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">3.5</td><td class="num">0/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/g1_gym/policy.cpp</code>: 90 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action), history 1, 27 actions, owned() = 15.</p>
+    
+    <p>Upstream config: g1_full.yaml (hand contract).</p>
+    <pre>The policy&#x27;s contract against the upstream config:
+kp: 20 of 27 joints differ; largest relative -71.50% (left_shoulder_pitch_joint)
+  left_shoulder_pitch_joint and 7 more: deploy 14.2506, the upstream config 50, diff -35.75 (-71.50%)
+  wrist_roll_joint (both sides): deploy 14.2506, the upstream config 30, diff -15.75 (-52.50%)
+  left_ankle_roll_joint and 3 more: deploy 20, the upstream config 40, diff -20 (-50.00%)
+  left_wrist_pitch_joint and 3 more: deploy 16.7783, the upstream config 30, diff -13.22 (-44.07%)
+  knee_joint (both sides): deploy 200, the upstream config 150, diff +50 (+33.33%)
+kd: 27 of 27 joints differ; largest relative +100.00% (waist_yaw_joint)
+  waist_yaw_joint: deploy 4, the upstream config 2, diff +2 (+100.00%)
+  ankle_roll_joint (both sides): deploy 0.1, the upstream config 2, diff -1.9 (-95.00%)
+  ankle_pitch_joint (both sides): deploy 0.2, the upstream config 2, diff -1.8 (-90.00%)
+  left_shoulder_pitch_joint and 9 more: deploy 0.907223, the upstream config 2, diff -1.093 (-54.64%)
+  left_wrist_yaw_joint and 3 more: deploy 1.06814, the upstream config 2, diff -0.9319 (-46.59%)
+  left_hip_roll_joint and 5 more: deploy 2.5, the upstream config 2, diff +0.5 (+25.00%)
+  knee_joint (both sides): deploy 5, the upstream config 4, diff +1 (+25.00%)
+unlisted pose: same on 2 joint(s)
+unlisted kp: same on 2 joint(s)
+unlisted kd: same on 2 joint(s)
+Port values against the policy&#x27;s contract: no differences
+port: harness drives 14 joint(s) (hold), policy sees them as real: left_shoulder_pitch_joint, left_shoulder_roll_joint, left_shoulder_yaw_joint, left_elbow_joint, left_wrist_roll_joint, left_wrist_pitch_joint ...</pre>
+  </div>
+</details>
+<details id="stepdown">
+  <summary><span class="name">stepdown</span><span class="chip" style="color: var(--c-policy)">Policy</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="31.5" width="16" height="1.5" class="bu"><title>Authors&#x27; config: 1.6 s</title></rect><rect x="23" y="31.5" width="16" height="1.5" class="b"><title>Port&#x27;s values: 1.5 s</title></rect><rect x="45" y="32" width="16" height="1" class="b" opacity=".35"><title>Harness holds arms: not run</title></rect><rect x="67" y="31.5" width="16" height="1.5" class="b"><title>Random arm walk: 1.3 s</title></rect><rect x="89" y="31.5" width="16" height="1.5" class="b"><title>Plus punches: 1.5 s</title></rect><rect x="111" y="31.5" width="16" height="1.5" class="b"><title>Port, full benchmark: 1.5 s</title></rect></svg><span class="verdict">Falls under its authors&#x27; own config (1.6 s of 90): the score belongs to the policy, not the port.</span><span class="s num">2.1</span><span class="s num">1.5</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Authors&#x27; config</td><td class="num">1.6</td><td class="num">0/3</td></tr><tr><td>Port&#x27;s values</td><td class="num">1.5</td><td class="num">0/3</td></tr><tr><td>Random arm walk</td><td class="num">1.3</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">1.5</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">1.5</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">1.5</td><td class="num">0/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/stepdown/policy.cpp</code>: 47 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action, gait_phase), history 1, 12 actions, owned() = 15.</p>
+    <p class="eyebrow">What reading the adapter found</p><ul><li>actions are clipped to +-1 before scaling</li></ul>
+    <p>Upstream config: g1_config.yaml (unitree_rl_gym).</p>
+    <pre>The policy&#x27;s contract against the upstream config:
+phase clock: contract runs -1 policy steps (-20 ms, -9 deg of a 0.8 s gait) ahead of training (boundary A deviation)
+unlisted pose: 6 of 17 joint(s) differ; largest left_elbow_joint contract 0.6 against 0
+unlisted kp: 17 of 17 joint(s) differ; largest left_elbow_joint contract 14.25 against 500
+unlisted kd: 17 of 17 joint(s) differ; largest left_elbow_joint contract 0.9072 against 10
+Port values against the policy&#x27;s contract: no differences</pre>
+  </div>
+</details>
+<details id="nanog1">
+  <summary><span class="name">nanog1</span><span class="chip" style="color: var(--c-unclear)">Unclear</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="32" width="16" height="1" class="b" opacity=".35"><title>Authors&#x27; config: not run</title></rect><rect x="23" y="31.4" width="16" height="1.6" class="b"><title>Port&#x27;s values: 4.4 s</title></rect><rect x="45" y="31.2" width="16" height="1.8" class="b"><title>Harness holds arms: 5.2 s</title></rect><rect x="67" y="31.5" width="16" height="1.5" class="b"><title>Random arm walk: 2.3 s</title></rect><rect x="89" y="31.5" width="16" height="1.5" class="b"><title>Plus punches: 2.7 s</title></rect><rect x="111" y="31.5" width="16" height="1.5" class="b"><title>Port, full benchmark: 2.8 s</title></rect></svg><span class="verdict">Falls within 4.4 s with the port&#x27;s values; no upstream config was read to say whether the policy or the port is at fault.</span><span class="s num">2.1</span><span class="s num">2.8</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Port&#x27;s values</td><td class="num">4.4</td><td class="num">0/3</td></tr><tr><td>Harness holds arms</td><td class="num">5.2</td><td class="num">0/3</td></tr><tr><td>Random arm walk</td><td class="num">2.3</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">2.7</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">2.8</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">8.8</td><td class="num">0/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/nanog1/policy.cpp</code>: 98 observations (base_ang_vel, projected_gravity, velocity_commands, joint_pos_rel, joint_vel_rel, last_action*, constant, gait_phase), history 1, 29 actions, owned() = 15.</p>
+    <p class="eyebrow">What reading the adapter found</p><ul><li>17 observation element(s) are constants the port feeds: [79]=0, [80]=0, [81]=0, [82]=0, [83]=0, [84]=0, [85]=0, [86]=0 ...</li><li>actions are clipped to +-1 before scaling</li><li>17 action element(s) move no motor (the port discards them): their scales are read, not measured</li></ul>
+    <p>No upstream config read.</p>
+    <pre>Port values against the policy&#x27;s own contract (the port runs its values):
+port: harness drives 3 joint(s) (hold), policy sees them as real: waist_yaw_joint, waist_roll_joint, waist_pitch_joint
+port: harness drives 14 joint(s) (hold), policy sees them as real: left_shoulder_pitch_joint, left_shoulder_roll_joint, left_shoulder_yaw_joint, left_elbow_joint, left_wrist_roll_joint, left_wrist_pitch_joint ...</pre>
+  </div>
+</details>
+<details id="wcompton">
+  <summary><span class="name">wcompton</span><span class="chip" style="color: var(--c-unclear)">Unclear</span><svg class="spark" width="128" height="34" viewBox="0 0 128 34" role="img" aria-label="survival at each stage"><line class="base" x1="0" x2="128" y1="33.5" y2="33.5"/><rect x="1" y="32" width="16" height="1" class="b" opacity=".35"><title>Authors&#x27; config: not run</title></rect><rect x="23" y="31.5" width="16" height="1.5" class="b"><title>Port&#x27;s values: 2.6 s</title></rect><rect x="45" y="31.5" width="16" height="1.5" class="b"><title>Harness holds arms: 2.8 s</title></rect><rect x="67" y="31.5" width="16" height="1.5" class="b"><title>Random arm walk: 1.9 s</title></rect><rect x="89" y="31.5" width="16" height="1.5" class="b"><title>Plus punches: 1.7 s</title></rect><rect x="111" y="31.5" width="16" height="1.5" class="b"><title>Port, full benchmark: 1.7 s</title></rect></svg><span class="verdict">Falls within 2.6 s with the port&#x27;s values; no upstream config was read to say whether the policy or the port is at fault.</span><span class="s num">2.0</span><span class="s num">1.7</span></summary>
+  <div class="detail">
+    <div class="stages"><table><thead><tr><th>Stage</th><th class="num">Mean survival (s)</th><th class="num">Completed</th></tr></thead><tbody><tr><td>Port&#x27;s values</td><td class="num">2.6</td><td class="num">0/3</td></tr><tr><td>Harness holds arms</td><td class="num">2.8</td><td class="num">0/3</td></tr><tr><td>Random arm walk</td><td class="num">1.9</td><td class="num">0/3</td></tr><tr><td>Plus punches</td><td class="num">1.7</td><td class="num">0/3</td></tr><tr><td>Port, full benchmark</td><td class="num">1.7</td><td class="num">0/3</td></tr><tr><td>Port, arms still, no punches</td><td class="num">2.8</td><td class="num">0/3</td></tr></tbody></table></div>
+    
+    <p>Read from <code>policies/wcompton/policy.cpp</code>: 74 observations (base_ang_vel, projected_gravity, velocity_commands, gait_phase, joint_pos_rel, joint_vel_rel, last_action), history 1, 21 actions, owned() = 13.</p>
+    
+    <p>No upstream config read.</p>
+    <pre>Port values against the policy&#x27;s own contract (the port runs its values):
+unlisted pose: same on 8 joint(s)
+unlisted kp: same on 8 joint(s)
+unlisted kd: same on 8 joint(s)
+port: harness drives 8 joint(s) (hold), policy sees them as real: left_shoulder_pitch_joint, right_shoulder_pitch_joint, left_shoulder_roll_joint, right_shoulder_roll_joint, left_shoulder_yaw_joint, right_shoulder_yaw_joint ...</pre>
+  </div>
+</details>
+  </div>
+</section>
+
+<section>
+  <h2>Not benched</h2>
+  <p style="color: var(--muted); font-size: .92rem">The reader probes an adapter by running it on the CPU and checks that gaitkeeper rebuilds its observation exactly. It refuses rather than guesses:</p>
+  <div class="notread"><span class="name">amo</span><span>Two networks: an adapter network&#x27;s output drives the walking policy, so its input is not a robot state gaitkeeper can vary.</span><span class="name">asap</span><span>Observes waist and arm joints it does not drive, and gates its command with a walk/stand state machine. Benchmark: 45.6 s in MuJoCo.</span><span class="name">bfm_zero</span><span>Latent-conditioned: it loads a table of latents at start-up, and its input is not a velocity command. Benchmark: 12.3 s in MuJoCo.</span><span class="name">decoupled_wbc</span><span>Several policies behind a factory that takes arguments, not one policy class.</span><span class="name">falcon</span><span>A gait clock that advances only while standing. Benchmark: 36.8 s in MuJoCo.</span><span class="name">gr00t_wbc</span><span>Several policies behind a factory that takes arguments (walk and balance), not one policy class.</span><span class="name">handoff</span><span>Observes roll and pitch computed from gravity, and fixed hand commands. Benchmark: 21.3 s in MuJoCo.</span><span class="name">homie</span><span>Observes joints it does not drive, and shapes its command from the target position instead of the velocity command.</span><span class="name">josabb</span><span>41 actions, 12 of them hand joints the benchmark&#x27;s G1 model does not have. Benchmark: 10.1 s in MuJoCo.</span><span class="name">mimic_lite</span><span>A motion-tracking stack (a planner network feeding an actor), not a velocity-command walker. Benchmark: 48.1 s in MuJoCo.</span><span class="name">mturan33</span><span>Observes Euler angles computed from the base quaternion, read in the wrong component order (its roll reads pi when upright). Benchmark: 2.8 s in MuJoCo.</span><span class="name">openwbt</span><span>A two-leg gait clock warped by a stance ratio, which gaitkeeper&#x27;s clock terms do not model. Benchmark: 26.8 s in MuJoCo.</span><span class="name">run_residual</span><span>Two networks (a motion generator and a residual actor). Benchmark: 51.7 s in MuJoCo.</span><span class="name">sonic</span><span>A motion-tracking stack (a planner network feeding an actor), not a velocity-command walker. Benchmark: 68.5 s in MuJoCo.</span><span class="name">sunny</span><span>Reads and verifies; its weights are not published, so it is not benched. Benchmark: 7.3 s in MuJoCo.</span><span class="name">wbc_agile</span><span>Calls TensorRT directly instead of the benchmark&#x27;s engine interface, so it does not build for the CPU. Benchmark: 70.9 s in MuJoCo.</span><span class="name">wbc_agile_velocity</span><span>Builds its gravity input from more than one axis per element, which no gaitkeeper term does.</span><span class="name">zealot</span><span>Observes the action from two steps back, joint velocities by finite difference, and a gait period that depends on speed. Benchmark: 8.2 s in MuJoCo.</span></div>
+</section>
+
+<section>
+  <h2>How to read a verdict</h2>
+  <div class="defs">
+    <b>Authors' config</b><span>The policy as its authors trained or deployed it: their gains, poses and observation, read from their config (Isaac Lab env.yaml, unitree_rl_gym, a Unitree deploy.yaml). Run with the same drive as the port, so stages differ only in values.</span>
+    <b>Port's values</b><span>The values the benchmark's adapter feeds and applies, with the policy driving every joint it lists.</span>
+    <b>Harness holds arms</b><span>The harness takes the arm joints from the policy and holds them at its stance with its own gains.</span>
+    <b>Random arm walk</b><span>The harness moves the arms at random, as teleoperation does.</span>
+    <b>Plus punches</b><span>A punch on a random link every waypoint, rising to 500 N.</span>
+    <b>Port, full benchmark</b><span>All of the above with the port's own view of the arms (some ports hide arm motion from the policy).</span>
+  </div>
+  <p style="color: var(--muted); font-size: .92rem">Evidence L1: one runner, one model, stated assumptions. A verdict names the step that costs survival here; it is not a claim about the benchmark's own numbers, and a step that is not run cannot be blamed.</p>
+</section>
+
+<section>
+  <h2>Reproduce</h2>
+<pre>pip install "gaitkeeper[sim]==0.4.0"
+git clone https://github.com/rhoyn/teleop-walking-benchmark twb   # at 6d331a8
+
+git clone https://github.com/unitreerobotics/unitree_rl_gym   # rl_gym's authors' config
+
+# read a port from its adapter (needs g++ or clang++)
+gaitkeeper adapter twb/policies/rl_gym/policy.cpp --mjcf twb/assets/g1_29dof.xml --out contracts/
+
+# run the ladder, with the authors' config as the first stage when there is one
+gaitkeeper bench --adapter twb/policies/rl_gym/policy.cpp --onnx twb/policies/rl_gym/model.onnx \
+    --upstream unitree_rl_gym/deploy/deploy_mujoco/configs/g1.yaml \
+    --mjcf twb/assets/g1_29dof.xml --seeds 3 --md rl_gym.md</pre>
+  <p>Source, method and every command: <a href="https://github.com/dundysm/gaitkeeper">github.com/dundysm/gaitkeeper</a>.</p>
+</section>
+</div>
+
+</body>
+</html>

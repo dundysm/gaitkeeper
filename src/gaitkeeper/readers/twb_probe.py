@@ -246,7 +246,13 @@ def probe(a: Adapter) -> ProbeResult:
     hist_fam = next((f for f in ("gyro", "gravity", "cmd", "lin_vel") if newest(f, 0)), None)
     he = 0
     if hist_fam is None:
-        hist_fam, he = "q", next(m for m in p2m_i if newest("q", m))
+        he = next((m for m in p2m_i if newest("q", m)), None)
+        if he is None:
+            raise ProbeError(
+                f"{a.name}: the observation follows none of gyro, gravity, command or joint "
+                "positions (a reference-motion or latent policy)"
+            )
+        hist_fam = "q"
     lag0 = 1 if hist_fam == "action" else 0
     i0 = next(iter(newest(hist_fam, he)))
     age_of: dict[int, int] = {}

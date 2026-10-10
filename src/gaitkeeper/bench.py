@@ -263,6 +263,7 @@ def run_bench(
             + ("" if unlisted else " (no control.unlisted: they get no torque and cannot walk)")
         )
     rep = BenchReport(name=name, seconds=0.0, notes=notes)
+    pre: list[str] = []
 
     def one(key: str, c: Any, arms: str, punches: str, arms_obs: str) -> None:
         if progress:
@@ -283,8 +284,14 @@ def run_bench(
     if upstream is not None:
         upstream = upstream.copy()
         filled = []
+        swapped = []
         for k in ("kind", "pd_period", "integrator", "torque_limit_at"):
             path = f"control.actuators.{k}"
+            mine, theirs = contract.get(path, None), upstream.get(path, None)
+            if theirs is not None and mine is not None and theirs != mine:
+                upstream.set(path, mine, "default", f"was {theirs}: the bench contract's drive")
+                swapped.append(f"{k} {theirs} -> {mine}")
+                continue
             if upstream.get(path, None) is None and contract.get(path, None) is not None:
                 upstream.set(
                     path,
@@ -297,10 +304,27 @@ def run_bench(
         if upstream.get(lim, None) is None and contract.get(lim, None) is not None:
             upstream.set(lim, contract.get(lim), "default", "the bench contract's command limits")
             filled.append("command limits")
+        if swapped:
+            rep.notes.append(
+                "the upstream config trained with another drive ("
+                + ", ".join(swapped)
+                + "): run with the bench contract's, so the stages differ only in values"
+            )
         if filled:
             rep.notes.append(
                 "the upstream config does not state "
                 f"{', '.join(filled)}: run with the policy contract's, like for like"
+            )
+        trained = upstream.get("policy_io.commands.base_velocity.trained", None) or {}
+        lim = contract.get("policy_io.commands.base_velocity.limit", None) or {}
+        beyond = []
+        for ax in ("vx", "vy", "wz"):
+            t, lm = trained.get(ax), lim.get(ax)
+            if t and lm and (lm[0] < t[0] - 1e-9 or lm[1] > t[1] + 1e-9):
+                beyond.append(f"{ax} up to [{lm[0]:g}, {lm[1]:g}], trained [{t[0]:g}, {t[1]:g}]")
+        if beyond:
+            pre.append(
+                "the tour commands more than the policy was trained on: " + "; ".join(beyond)
             )
         one("upstream", upstream, "policy", "none", "real")
         from .deviation import compare
@@ -341,7 +365,7 @@ def run_bench(
                 f"policy sees them as {e.get('obs', 'real')}: {', '.join(e['joints'][:6])}"
                 + (" ..." if len(e["joints"]) > 6 else "")
             )
-    rep.findings = attribute(rep.stages, rep.seconds)
+    rep.findings = pre + attribute(rep.stages, rep.seconds)
     if "port_quiet" in rep.stages and "own" in rep.stages:
         lost = rep.stages["own"]["mean_survival_s"] - rep.stages["port_quiet"]["mean_survival_s"]
         if lost >= NOTABLE_S:

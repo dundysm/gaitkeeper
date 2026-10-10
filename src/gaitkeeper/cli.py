@@ -17,11 +17,21 @@ from .env import env
 from .trace import Trace
 
 
-def _read_any(path: str, robot: str = "unitree_g1_29dof") -> Contract:
-    """A contract YAML, a Unitree deploy.yaml or a unitree_rl_gym deploy config, by content."""
-    import yaml
+def _read_any(
+    path: str, robot: str = "unitree_g1_29dof", joint_order: list[str] | None = None
+) -> Contract:
+    """A contract YAML, a Unitree deploy.yaml, a unitree_rl_gym deploy config or an Isaac Lab
+    env.yaml, by content. ``joint_order`` is the policy's, for an env.yaml (which lacks it)."""
+    from .readers.isaaclab_env import load_env_yaml
 
-    d = yaml.safe_load(Path(path).read_text()) or {}
+    d = load_env_yaml(path) or {}
+    if "scene" in d and "observations" in d and "decimation" in d:
+        from .readers.isaaclab_env import read_isaaclab_env
+
+        c, findings = read_isaaclab_env(path, joint_order=joint_order, robot=robot)
+        for f in findings:
+            print(f"reader: {f}", file=sys.stderr)
+        return c
     if "schema" in d:
         return Contract.load(path)
     if "joint_ids_map" in d:
@@ -36,12 +46,23 @@ def _read_any(path: str, robot: str = "unitree_g1_29dof") -> Contract:
         for f in findings:
             print(f"reader: {f}", file=sys.stderr)
         return c
-    raise ValueError(f"{path}: not a contract, a Unitree deploy.yaml or a unitree_rl_gym config")
+    raise ValueError(
+        f"{path}: not a contract, a Unitree deploy.yaml, a unitree_rl_gym config or an "
+        "Isaac Lab env.yaml"
+    )
 
 
 def _contract(args: argparse.Namespace) -> Contract:
     if args.contract:
         c = Contract.load(args.contract)
+    elif getattr(args, "isaaclab_env", None):
+        from .readers.isaaclab_env import read_isaaclab_env
+
+        c, findings = read_isaaclab_env(
+            args.isaaclab_env, joint_order=args.joint_order, robot=args.robot, onnx_path=args.onnx
+        )
+        for f in findings:
+            print(f"reader: {f}", file=sys.stderr)
     elif getattr(args, "legged_gym", None):
         from .readers.legged_gym import read_legged_gym
 
@@ -501,7 +522,11 @@ def cmd_bench(args: argparse.Namespace) -> int:
         sys.exit("give --policy (or --onnx)")
     upstream = None
     if args.upstream or args.upstream_deploy:
-        upstream = _read_any(args.upstream or args.upstream_deploy, args.robot)
+        upstream = _read_any(
+            args.upstream or args.upstream_deploy,
+            args.robot,
+            list(c.get("policy_io.joints.names")),
+        )
     wps = None
     if args.waypoints:
         d = yaml.safe_load(Path(args.waypoints).read_text())
@@ -747,6 +772,8 @@ _PATH_FLAGS = (
     "upstream_deploy",
     "rl_gym",
     "legged_gym",
+    "isaaclab_env",
+    "joint_order",
     "legged_gym_base",
     "urdf",
     "env_py",

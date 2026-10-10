@@ -111,7 +111,7 @@ traceback), and warns when the MJCF has no floor. `demo` exits 0 when it ran.
 |---|---|---|
 | `demo` | The issue 145 setup, end to end | L1 |
 | `fetch` | Pinned policies and MJCF scenes, sha256 checked | |
-| `inspect` | Contract from an mjlab ONNX export, a Unitree `deploy.yaml` (G1 29 dof, H1), a unitree_rl_gym deploy config or a legged_gym training config | a reading |
+| `inspect` | Contract from an mjlab ONNX export, a Unitree `deploy.yaml` (G1 29 dof, H1), a unitree_rl_gym deploy config, a legged_gym training config or an Isaac Lab env.yaml | a reading |
 | `verify <trace>` | Boundaries B, A, C | L2 on a golden trace, L1 on a harness log or a self trace |
 | `verify <trace> --mjcf` | Plus D, the nominal closed loop and the model counterfactual | L2 for PHYSICS and POLICY_UNDER_TASK, L3 for PASS |
 | `residual` | D alone, plus parameter fits that stay out of the verdict | detection only |
@@ -149,8 +149,8 @@ phase clock: contract runs -1 policy steps (-20 ms, -9 deg of a 0.8 s gait) ahea
 unlisted kp: 17 of 17 joint(s) differ; largest left_elbow_joint contract 14.25 against 500
 ```
 
-`--upstream` takes a contract, a Unitree `deploy.yaml` or a unitree_rl_gym deploy
-config. Without an adapter, give the bench contract with `--contract`/`--deploy` and the
+`--upstream` takes a contract, a Unitree `deploy.yaml`, a unitree_rl_gym deploy config or
+the `env.yaml` Isaac Lab saved with the training run. Without an adapter, give the bench contract with `--contract`/`--deploy` and the
 port with `--port`.
 
 <details>

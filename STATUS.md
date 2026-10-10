@@ -176,6 +176,12 @@ hand-written contract. What changes a policy's score:
   rl_gym completes it upstream (upper body welded) and loses 12 s to the port, which
   runs its gait clock one step behind and holds the upper body loosely at the harness pose;
   the arm walk then costs it 56 s more.
+* Against the env.yaml each was trained with (dm_agile, dm_march, clobot): the adapters
+  match the training values (clobot's to its three printed digits), dm_march's port runs
+  the gait clock as training did where unitree_rl_lab's deploy runtime runs it two steps
+  ahead, and dm_march was never trained to turn (yaw range 0, no curriculum on it), which
+  its port respects by commanding no yaw. clobot's tour asks for yaw rates up to 0.7 rad/s,
+  trained to 0.5.
 * Reading the adapters also found what reading their source had missed: clobot clips
   actions to +-5, dm_march clamps every target to +-1 rad, g1_gym clamps targets to joint
   limits, legged_rl_lab ramps its actions in over 0.8 s, and mturan33 reads the harness's

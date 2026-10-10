@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+* A reader for the env.yaml Isaac Lab writes with a training run (`--isaaclab-env
+  params/env.yaml [--joint-order deploy.yaml]`): regex patterns over joint names resolved
+  as Isaac Lab does (default pose, actuator groups with gains, armature and limits, action
+  scale), observation terms with their scales, clips and history, training noise noted,
+  the command start and limit ranges and which axes a curriculum widens. The joint order,
+  which the file does not hold, comes from a deploy.yaml, from the bench contract under
+  `bench --upstream`, or is assumed (unitree_rl_lab's G1 order, flagged).
+* `bench --upstream` runs the upstream stage with the bench contract's drive when the two
+  differ (an implicit PhysX drive against an explicit PD), so stages differ only in values,
+  and reports when the tour commands more than the policy was trained on.
 * A reader for legged_gym training configs (`--legged-gym g1_config.py --legged-gym-base
   legged_robot_config.py [--urdf ...] [--env-py ...]`): the config classes are evaluated
   without importing legged_gym or Isaac Gym (literal values, base classes merged), gains

@@ -107,3 +107,33 @@ def test_gait_phase_legs_is_a_two_leg_clock_half_a_period_apart():
     np.testing.assert_allclose(out[:, 1], -np.sin(ph), atol=1e-12)
     np.testing.assert_allclose(out[:, 2], np.cos(ph), atol=1e-12)
     np.testing.assert_allclose(out[:, 3], -np.cos(ph), atol=1e-12)
+
+
+def test_base_lin_vel_is_the_root_velocity_in_the_root_frame():
+    from gaitkeeper.terms import base_lin_vel
+
+    yaw90 = [np.cos(np.pi / 4), 0, 0, np.sin(np.pi / 4)]  # wxyz, 90 degrees about z
+    s = _state([yaw90])
+    s.lin_vel_world = np.array([[1.0, 0.0, 0.2]])
+    out = base_lin_vel(s, {}, TermContext(["j0", "j1"], np.zeros(2), policy_dt=0.02))
+    np.testing.assert_allclose(out, [[0.0, -1.0, 0.2]], atol=1e-12)
+    s.lin_vel_world = None
+    with pytest.raises(ValueError, match="linear velocity"):
+        base_lin_vel(s, {}, TermContext(["j0", "j1"], np.zeros(2), policy_dt=0.02))
+
+
+def test_raw_state_from_arrays_keeps_the_linear_velocity():
+    qpos = np.zeros((2, 9))
+    qpos[:, 3] = 1.0
+    qvel = np.zeros((2, 8))
+    qvel[:, 0] = [0.3, 0.4]
+    s = RawState.from_arrays(
+        qpos,
+        qvel,
+        StateLayout(joint_names=["j0", "j1"]),
+        np.zeros((2, 3)),
+        np.arange(2),
+        np.array([True, False]),
+        np.zeros((2, 2)),
+    )
+    np.testing.assert_allclose(s.lin_vel_world[:, 0], [0.3, 0.4])

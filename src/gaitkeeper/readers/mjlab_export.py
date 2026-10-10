@@ -20,6 +20,7 @@ from .numtext import TextFloat, load_yaml_with_text, parse_csv_floats, parse_csv
 # mjlab observation term names (ONNX metadata) and deploy.yaml keys, mapped to
 # the term library's ids.
 ONNX_TERM_IDS = {
+    "base_lin_vel": "base_lin_vel",
     "base_ang_vel": "base_ang_vel",
     "projected_gravity": "projected_gravity",
     "command": "velocity_commands",
@@ -29,6 +30,7 @@ ONNX_TERM_IDS = {
     "actions": "last_action",
 }
 YAML_TERM_IDS = {
+    "base_lin_vel": "base_lin_vel",
     "base_ang_vel": "base_ang_vel",
     "projected_gravity": "projected_gravity",
     "velocity_commands": "velocity_commands",
@@ -38,6 +40,7 @@ YAML_TERM_IDS = {
     "last_action": "last_action",
 }
 TERM_DIMS = {
+    "base_lin_vel": 3,
     "base_ang_vel": 3,
     "projected_gravity": 3,
     "velocity_commands": 3,

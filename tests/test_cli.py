@@ -72,3 +72,21 @@ def test_task_on_the_issue_145_setup(tmp_path, capsys):
     assert "a silent contract error is not excluded" in dec["caveats"]
     assert set(j["task"]["kinds"]) == {"dead zone", "fall"}
     assert "Finding  TASK_FAILURE_OBSERVED / BEHAVIORAL_LIMITATION  (evidence L1, exit 5)" in text
+
+
+def test_set_states_a_contract_field_as_user_given(tmp_path):
+    from argparse import Namespace
+
+    import pytest
+
+    from gaitkeeper.cli import _contract
+    from gaitkeeper.contract import SCHEMA, Contract
+
+    p = tmp_path / "c.yaml"
+    Contract({"schema": SCHEMA}).save(p)
+    sets = ["timing.policy_dt=0.02", "model.armature={a: 0.01}"]
+    c = _contract(Namespace(contract=str(p), preset=[], set=sets))
+    assert c.get("timing.policy_dt") == 0.02 and c.prov("timing.policy_dt").source == "user"
+    assert c.get("model.armature") == {"a": 0.01}
+    with pytest.raises(SystemExit, match="top level"):
+        _contract(Namespace(contract=str(p), preset=[], set=["x.y=1"]))

@@ -275,7 +275,13 @@ class Runner:
         self.mjcf = str(mjcf)
         self.policy = policy
         self.names = list(contract.get("policy_io.joints.names"))
-        self.policy_dt = float(contract.get("timing.policy_dt"))
+        pdt = contract.get("timing.policy_dt", None)
+        if pdt is None:
+            raise ValueError(
+                "the contract does not state timing.policy_dt; give a deploy/export yaml, "
+                "a preset, or --set timing.policy_dt=<seconds>"
+            )
+        self.policy_dt = float(pdt)
         sd = contract.get("timing.sim_dt", None)
         self.sim_dt = float(sd) if sd is not None else None
         d = contract.get("control.default_joint_pos")
@@ -662,7 +668,9 @@ class Runner:
                 elif ext_obs[i] == "default":
                     qj[i] = self.default[i]
                     vj[i] = 0.0
-            obs = builder.step(quat, w_b, qj, vj, self.names, cmd, t, prev_action)
+            obs = builder.step(
+                quat, w_b, qj, vj, self.names, cmd, t, prev_action, d.qvel[v0 : v0 + 3].copy()
+            )
             if cfg.policy_mode == "policy":
                 a = self.policy.step(obs)
             elif cfg.policy_mode == "zero":

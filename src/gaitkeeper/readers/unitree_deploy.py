@@ -40,6 +40,7 @@ from .mjlab_export import ReaderFinding
 from .numtext import TextFloat, load_yaml_with_text
 
 TERM_IDS = {
+    "base_lin_vel": "base_lin_vel",
     "base_ang_vel": "base_ang_vel",
     "projected_gravity": "projected_gravity",
     "velocity_commands": "velocity_commands",
@@ -51,6 +52,7 @@ TERM_IDS = {
     "last_action": "last_action",
 }
 DIMS = {
+    "base_lin_vel": 3,
     "base_ang_vel": 3,
     "projected_gravity": 3,
     "velocity_commands": 3,

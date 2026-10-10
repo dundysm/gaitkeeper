@@ -90,6 +90,7 @@ class RawState:
     reset: np.ndarray  # (T,) True when the observation follows a reset
     prev_action: np.ndarray  # (T, A) previous raw policy output (zeros after reset)
     action: np.ndarray | None = None  # (T, A) raw policy output at each step, when known
+    lin_vel_world: np.ndarray | None = None  # (T, 3) root linear velocity, world frame
 
     @classmethod
     def from_arrays(
@@ -110,6 +111,9 @@ class RawState:
         if layout.quat_order == "xyzw":
             quat = quat[:, [3, 0, 1, 2]]
         w = qvel[:, 3:6]
+        v = qvel[:, 0:3]
+        if layout.lin_vel_frame == "body":
+            v = np.einsum("tij,tj->ti", quat_to_mat(quat), v)
         if layout.ang_vel_frame == "world":
             w = np.einsum("tji,tj->ti", quat_to_mat(quat), w)
         reset = np.asarray(reset, dtype=bool)
@@ -128,6 +132,7 @@ class RawState:
             reset=reset,
             prev_action=prev,
             action=action,
+            lin_vel_world=v,
         )
 
     def joint_index(self, names: list[str]) -> np.ndarray:
@@ -157,6 +162,14 @@ def base_ang_vel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray
         return np.einsum("tij,tj->ti", quat_to_mat(s.root_quat), s.ang_vel_body)
     r_imu = quat_to_mat(np.asarray(ctx.imu_rotation_in_root)[None])[0]
     return s.ang_vel_body @ r_imu  # r_imu^T w for each row
+
+
+def base_lin_vel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    """Root linear velocity in the root frame, as Isaac Lab's and mjlab's ``base_lin_vel``
+    read it from the simulator. A real robot has no such sensor."""
+    if s.lin_vel_world is None:
+        raise ValueError("base_lin_vel needs the root's linear velocity, which this state lacks")
+    return np.einsum("tji,tj->ti", quat_to_mat(s.root_quat), s.lin_vel_world)
 
 
 def projected_gravity(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
@@ -233,6 +246,7 @@ def last_action(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
 
 TERMS: dict[str, TermFn] = {
     "base_ang_vel": base_ang_vel,
+    "base_lin_vel": base_lin_vel,
     "projected_gravity": projected_gravity,
     "velocity_commands": velocity_commands,
     "gait_phase": gait_phase,
@@ -393,6 +407,7 @@ class ObservationBuilder:
         command: np.ndarray,
         episode_step: int,
         prev_action: np.ndarray,
+        lin_vel_world: np.ndarray | None = None,
     ) -> np.ndarray:
         reset = episode_step == 0
         s = RawState(
@@ -405,6 +420,7 @@ class ObservationBuilder:
             episode_step=np.array([episode_step]),
             reset=np.array([reset]),
             prev_action=(np.zeros_like(prev_action) if reset else np.asarray(prev_action))[None],
+            lin_vel_world=None if lin_vel_world is None else np.asarray(lin_vel_world, float)[None],
         )
         values = term_values(s, self.terms, self.ctx)
         init = self.history.get("init", "repeat_first")

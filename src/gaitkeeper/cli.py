@@ -41,6 +41,17 @@ def _contract(args: argparse.Namespace) -> Contract:
 
         filled = apply_preset(c, name)
         print(f"preset {name}: filled {len(filled)} field(s)", file=sys.stderr)
+    for item in getattr(args, "set", None) or []:
+        import yaml
+
+        path, sep, value = item.partition("=")
+        if not sep or not path:
+            sys.exit(f"--set {item!r}: expected PATH=VALUE, e.g. timing.policy_dt=0.02")
+        try:
+            c.set(path.strip(), yaml.safe_load(value), "user", "--set on the command line")
+        except KeyError as e:
+            sys.exit(f"--set {item!r}: {e}")
+        print(f"set {path.strip()} = {value} (provenance: user)", file=sys.stderr)
     return c
 
 
@@ -560,6 +571,12 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--deploy", help="Unitree deploy.yaml, read as what the robot runs")
         p.add_argument("--robot", default="unitree_g1_29dof", help="SDK table for --deploy")
         p.add_argument("--preset", action="append", help="named training preset for unknown fields")
+        p.add_argument(
+            "--set",
+            action="append",
+            metavar="PATH=VALUE",
+            help="set one contract field (YAML value), e.g. timing.policy_dt=0.02; marked as user-stated",
+        )
 
     def sim_args(p: argparse.ArgumentParser) -> None:
         contract_args(p)

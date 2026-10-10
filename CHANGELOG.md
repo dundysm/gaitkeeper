@@ -47,6 +47,11 @@
     frame by frame.
 * The probe now checks whether a port observes the harness's arm targets, and verification
   moves them, so a port that does is no longer read as feeding constants.
+* The benchmark's punches land where the benchmark lands them: on the child link of a
+  random motor's joint, at the joint's anchor, so the force also twists the link about its
+  centre of mass (mjwarp_capture.py `k_punch_apply`). They were applied at the centre of
+  mass, which cost the long-surviving policies more than the benchmark's punches do.
+  `Push.point` places any force push off the centre of mass.
 * Adapters run from a sandbox that links the benchmark's `policies/`, so ports that read
   or patch their model files at start (handoff, wbc_agile_velocity) construct; what they
   write stays out of the checkout. TensorRT's version macros are defined for ports that

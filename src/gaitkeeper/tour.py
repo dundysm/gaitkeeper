@@ -159,19 +159,25 @@ def bench_waypoints(seed: int) -> list[tuple[float, float, float]]:
     return out
 
 
-def bench_punches(seed: int, bodies: list[str]) -> list[Push]:
-    """One punch per waypoint slot, on a random link, random direction on the sphere."""
+def bench_punches(seed: int, bodies: list) -> list[Push]:
+    """One punch per waypoint slot, on a random link, random direction on the sphere.
+    ``bodies`` are link names, or (name, point) pairs: the point, in the link's frame, is
+    where the force acts. The benchmark picks a motor and pushes its joint's child link at
+    the joint's anchor (mjwarp_capture.py k_punch_apply), so the punch also twists the link
+    about its centre of mass."""
     rng = np.random.default_rng([seed, 3])
     out = []
     for i in range(BENCH_WAYPOINTS):
         t = BENCH_PUNCH_DELAY_S + BENCH_POINT_S * i
-        body = bodies[int(rng.integers(len(bodies)))]
+        pick = bodies[int(rng.integers(len(bodies)))]
+        body, point = (pick, None) if isinstance(pick, str) else pick
         d = rng.normal(size=3)
         d /= np.linalg.norm(d)
         climbed = min((t - BENCH_PUNCH_DELAY_S) / BENCH_RAMP_S, 1.0)
         ceiling = BENCH_FORCE_MAX_N * (BENCH_RAMP_FLOOR + (1 - BENCH_RAMP_FLOOR) * climbed)
         f = ceiling * rng.uniform(BENCH_FORCE_SCALE_MIN, 1.0)
-        out.append(Push(t, "force", tuple(float(x) for x in d * f), body, BENCH_PUNCH_S))
+        pt = None if point is None else tuple(float(x) for x in point)
+        out.append(Push(t, "force", tuple(float(x) for x in d * f), body, BENCH_PUNCH_S, pt))
     return out
 
 
@@ -316,7 +322,11 @@ def _tour_job(job: tuple) -> dict[str, Any]:
                 ext.append(External(js, "hold", {j: stance[j] for j in js}, kp, kd, obs))
     pushes = []
     if o.punches == "benchmark":
-        bodies = [m.body(m.jnt_bodyid[m.actuator_trnid[a, 0]]).name for a in range(m.nu)]
+        # each motor's joint: its child link, pushed at the joint's anchor
+        bodies = [
+            (m.body(m.jnt_bodyid[m.actuator_trnid[a, 0]]).name, m.jnt_pos[m.actuator_trnid[a, 0]])
+            for a in range(m.nu)
+        ]
         pushes = bench_punches(seed, bodies)
     res = r.run(
         RunConfig(

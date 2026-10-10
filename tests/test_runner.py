@@ -100,6 +100,24 @@ def test_held_joints_stay_at_the_hold_pose_and_pushes_apply(url):
     assert obs.shape[1] == 480
 
 
+def test_a_push_off_the_centre_of_mass_also_twists(url):
+    """The benchmark punches a link at its joint's anchor, not at its centre of mass: the
+    same force there adds a torque about it."""
+    r = _runner(url)
+    spin = []
+    for point in (None, (0.0, 0.0, 0.3)):
+        res = r.run(
+            RunConfig(
+                seconds=1.2,
+                record=True,
+                pushes=[Push(1.0, "force", (60.0, 0.0, 0.0), "torso_link", 0.1, point)],
+            )
+        )
+        assert ("point" in res.pushes[0]) == (point is not None)
+        spin.append(np.abs(res.log["qvel"][-1][3:6]).max())
+    assert abs(spin[1] - spin[0]) > 0.05
+
+
 def _legs_only(c, unlisted):
     """The contract restricted to its first 15 policy joints in MuJoCo order (legs, waist)."""
     import copy

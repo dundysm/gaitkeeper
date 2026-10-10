@@ -146,6 +146,26 @@ step sizes cannot separate the terms and the tool says so. Three step sizes
 recover them. This shows the estimator works on a known drive. It does not
 show that PhysX is one.
 
+**teleop-walking-benchmark, 15 of 28 ports (L1, 2026-10-09).** Contracts read from each
+port's `policy.cpp` and, where published, its upstream config; command maps on the
+benchmark's own `g1_29dof.xml`; the benchmark's tour reproduced with `gaitkeeper tour`.
+Survival on the tour tracks the benchmark's over 11 policies (Pearson 0.94, Spearman 0.85).
+What changes a policy's score:
+
+* The harness's holding gains (armature-derived, waist kp 28 to 40) make schoi fall; with
+  its own deploy gains (waist 300) it walks. wcompton also stands once the waist is stiffer.
+* Handing the arms to the harness breaks clobot and legged_rl_lab, which were trained to
+  drive them; with all 29 joints they stand and track.
+* The random arm walk alone ends rl_mjlab's and huru's tours (about 5 s; 51 to 67 s with
+  the arms still) and halves wty_cpp's and rl_lab's.
+* rl_gym, trained on a 12-dof G1 with the upper body welded, drifts 0.4 to 0.6 m/s at rest
+  with the harness's arm pose.
+* dm_agile falls standing still even with its own deploy.yaml, which the port matches.
+
+Not covered: nanog1, openwbt (recurrent, partial layouts), josabb (hand joints), sunny
+(gated weights), and the 8 non-velocity policies (reference motion, latents). Reported
+to the benchmark's author on unitree_rl_lab issue 145.
+
 ## Limitations
 
 * No Isaac Lab or PhysX trace has been recorded, so nothing here is a
@@ -223,7 +243,7 @@ policy's dead zone and punches explain the score, measured in MuJoCo) and
 unitree_rl_lab issue 149 (asking for a LICENSE file). Notes on the `efferent`
 log format and a list of exporter keys are drafts, not sent.
 
-**Release.** 0.1.0 is on PyPI (`pip install "gaitkeeper[sim]"`).
+**Release.** 0.2.0 is on PyPI (`pip install "gaitkeeper[sim]"`).
 `.github/workflows/release.yml` publishes each `v*` tag through trusted
 publishing; a release created on GitHub makes the tag.
 

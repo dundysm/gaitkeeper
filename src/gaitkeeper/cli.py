@@ -17,9 +17,37 @@ from .env import env
 from .trace import Trace
 
 
+def _read_any(path: str, robot: str = "unitree_g1_29dof") -> Contract:
+    """A contract YAML, a Unitree deploy.yaml or a unitree_rl_gym deploy config, by content."""
+    import yaml
+
+    d = yaml.safe_load(Path(path).read_text()) or {}
+    if "schema" in d:
+        return Contract.load(path)
+    if "joint_ids_map" in d:
+        from .readers.unitree_deploy import read_unitree_deploy
+
+        c, _ = read_unitree_deploy(path, None, robot=robot)
+        return c
+    if "num_obs" in d and "kps" in d:
+        from .readers.rl_gym_deploy import read_rl_gym_deploy
+
+        c, findings = read_rl_gym_deploy(path, None, robot=robot)
+        for f in findings:
+            print(f"reader: {f}", file=sys.stderr)
+        return c
+    raise ValueError(f"{path}: not a contract, a Unitree deploy.yaml or a unitree_rl_gym config")
+
+
 def _contract(args: argparse.Namespace) -> Contract:
     if args.contract:
         c = Contract.load(args.contract)
+    elif getattr(args, "rl_gym", None):
+        from .readers.rl_gym_deploy import read_rl_gym_deploy
+
+        c, findings = read_rl_gym_deploy(args.rl_gym, args.onnx, robot=args.robot)
+        for f in findings:
+            print(f"reader: {f}", file=sys.stderr)
     elif getattr(args, "deploy", None):
         from .readers.unitree_deploy import read_unitree_deploy
 
@@ -34,7 +62,8 @@ def _contract(args: argparse.Namespace) -> Contract:
             print(f"reader {f.kind}: {f.path}: {f.message}", file=sys.stderr)
     else:
         sys.exit(
-            "give --contract, --deploy (Unitree deploy.yaml), or --onnx (and optionally --yaml)"
+            "give --contract, --deploy (Unitree deploy.yaml), --rl-gym (unitree_rl_gym config), "
+            "or --onnx (and optionally --yaml)"
         )
     for name in getattr(args, "preset", None) or []:
         from .presets import apply_preset
@@ -456,12 +485,8 @@ def cmd_bench(args: argparse.Namespace) -> int:
     if not path:
         sys.exit("give --policy (or --onnx)")
     upstream = None
-    if args.upstream:
-        upstream = Contract.load(args.upstream)
-    elif args.upstream_deploy:
-        from .readers.unitree_deploy import read_unitree_deploy
-
-        upstream, _ = read_unitree_deploy(args.upstream_deploy, None, robot=args.robot)
+    if args.upstream or args.upstream_deploy:
+        upstream = _read_any(args.upstream or args.upstream_deploy, args.robot)
     wps = None
     if args.waypoints:
         d = yaml.safe_load(Path(args.waypoints).read_text())
@@ -705,6 +730,7 @@ _PATH_FLAGS = (
     "adapter",
     "upstream",
     "upstream_deploy",
+    "rl_gym",
 )
 
 
@@ -754,6 +780,7 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--onnx", help="exported policy; its metadata is read as the contract")
         p.add_argument("--yaml", help="deploy.yaml exported next to the policy")
         p.add_argument("--deploy", help="Unitree deploy.yaml, read as what the robot runs")
+        p.add_argument("--rl-gym", help="unitree_rl_gym deploy_mujoco config (configs/*.yaml)")
         p.add_argument("--robot", default="unitree_g1_29dof", help="SDK table for --deploy")
         p.add_argument("--preset", action="append", help="named training preset for unknown fields")
         p.add_argument(

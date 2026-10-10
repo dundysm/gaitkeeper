@@ -259,10 +259,14 @@ def run_bench(
                     "the policy contract's controller, so the two runs differ only in values",
                 )
                 filled.append(k)
+        lim = "policy_io.commands.base_velocity.limit"
+        if upstream.get(lim, None) is None and contract.get(lim, None) is not None:
+            upstream.set(lim, contract.get(lim), "default", "the bench contract's command limits")
+            filled.append("command limits")
         if filled:
             rep.notes.append(
-                "the upstream config does not state the drive "
-                f"({', '.join(filled)}): run with the policy contract's, like for like"
+                "the upstream config does not state "
+                f"{', '.join(filled)}: run with the policy contract's, like for like"
             )
         one("upstream", upstream, "policy", "none", "real")
         from .deviation import compare

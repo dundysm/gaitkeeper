@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+* A reader for unitree_rl_gym's MuJoCo deploy configs (`--rl-gym configs/g1.yaml`), the
+  template many community G1 policies ship with: gains, default angles, scales and sizes
+  from the YAML, the observation and phase clock as `deploy_mujoco.py` builds them
+  (checked against a transcription of the script). A fork whose `num_obs` does not fit
+  that layout is refused. Joints the deploy scene welds are held by stiff servos at zero.
+* `bench --upstream` reads a contract, a Unitree deploy.yaml or a unitree_rl_gym config by
+  content, and fills the command limits an upstream config lacks from the bench contract.
+
 ## 0.3.0
 
 * `gaitkeeper bench --upstream contract.yaml` (or `--upstream-deploy deploy.yaml`): runs the

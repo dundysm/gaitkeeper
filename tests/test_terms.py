@@ -192,6 +192,19 @@ STATEFUL_TERMS = [
         "dim": 2,
         "params": {"period_knots": [[0.1, 0.8], [0.74, 0.4]], "stand_speed": 0.1},
     },
+    {
+        "id": "gait_phase_legs",
+        "dim": 4,
+        "params": {
+            "period": 0.8,
+            "stand": {
+                "eps_planar": 0.01,
+                "eps_yaw": 0.01,
+                "hold": [0.25, 0.75],
+                "resume": [0.0, 0.5],
+            },
+        },
+    },
 ]
 
 
@@ -220,6 +233,21 @@ def test_stateful_terms_follow_their_definitions():
         sp = abs(cmd[t, 0])
         if ep[t] > 0 and sp >= 0.1:
             ph = (ph + 0.02 / np.interp(sp, [0.1, 0.74], [0.8, 0.4])) % 1.0
+    # the two-leg clock: held while the command says stand, restarted on the first step after
+    standing = False
+    for t in range(len(ep)):
+        if ep[t] == 0:
+            pa, standing = -0.02 / 0.8, False
+        pa = (pa + 0.02 / 0.8) % 1.0
+        pb = (pa + 0.5) % 1.0
+        if abs(cmd[t, 0]) < 0.01:
+            pa, pb, standing = 0.25, 0.75, True
+        elif standing:
+            pa, pb, standing = 0.0, 0.5, False
+        A, B = 2 * np.pi * pa, 2 * np.pi * pb
+        want = [np.sin(A), np.sin(B), np.cos(A), np.cos(B)]
+        assert np.allclose(v["gait_phase_legs"][t], want, atol=1e-6), t
+    assert (np.abs(cmd[:, 0]) < 0.01).any() and (np.abs(cmd[:, 0]) >= 0.01).any()
 
 
 def test_builder_matches_the_whole_trace_for_stateful_terms():

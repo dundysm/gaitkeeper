@@ -927,6 +927,54 @@ def _knots(x: np.ndarray, y: np.ndarray, tol: float = 2e-4) -> list[list[float]]
     return [[round(p[0], 4), _round(p[1], 4)] for p in pts]
 
 
+def _legs_stand(
+    a: Adapter, idx: list[int], el: list[int], amp: np.ndarray, findings: list[str]
+) -> dict[str, Any]:
+    """A two-leg clock that holds while the command says stand: the phases it holds at, the
+    phases it restarts from, and the thresholds on |(vx, vy)| and |wz| below which it holds."""
+    roles = {
+        e: (i, float(A)) for i, e, A in zip(idx, el, amp)
+    }  # 0 sin a, 1 sin b, 2 cos a, 3 cos b
+
+    def phases(row: np.ndarray) -> list[float]:
+        out = []
+        for s_, c_ in ((0, 2), (1, 3)):
+            i_s, a_s = roles[s_]
+            i_c, a_c = roles[c_]
+            out.append(_round(math.atan2(row[i_s] / a_s, row[i_c] / a_c) / (2 * math.pi) % 1.0, 6))
+        return out
+
+    def holding(cmd) -> bool:
+        o_, _ = _run(a, 4, cmd=cmd)
+        return bool(np.abs(o_[3, idx] - o_[2, idx]).max() < TOL)
+
+    z, _ = _run(a, 3, cmd=(0.0, 0.0, 0.0))
+    hold = phases(z[2])
+    # stand for 3 steps, then move: the first moving step shows where it restarts
+    a.reset()
+    rows = []
+    x = _inputs()
+    for k in range(5):
+        c = (0.0, 0.0, 0.0) if k < 3 else BASE_CMD
+        _, seen = a.step(x["q"], x["dq"], x["gyro"], x["lin_vel"], x["gravity"], c, arm_pose=STANCE)
+        rows.append(seen[0][: a.obs_dim])
+    resume = phases(rows[3])
+    eps = []
+    for axis in (0, 2):
+        lo, hi = 0.0, 0.5
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            cmd = [0.0, 0.0, 0.0]
+            cmd[axis] = mid
+            lo, hi = (mid, hi) if holding(tuple(cmd)) else (lo, mid)
+        eps.append(_round(hi, 3))
+    findings.append(
+        f"the two-leg clock holds at {hold} (cycles) while |(vx, vy)| < {eps[0]:g} and "
+        f"|wz| < {eps[1]:g}, and restarts at {resume}"
+    )
+    return {"eps_planar": eps[0], "eps_yaw": eps[1], "hold": hold, "resume": resume}
+
+
 def _clock(
     a: Adapter, idx: list[int], findings: list[str]
 ) -> tuple[dict[str, Any], dict[int, tuple[str, int, float]]]:
@@ -1000,6 +1048,8 @@ def _clock(
                     findings.append(
                         "a gated two-leg clock: gaitkeeper's gait_phase_legs has no gate"
                     )
+            elif kind == "gait_phase_legs" and np.abs(z[2, idx] - z[1, idx]).max() < TOL:
+                clock["stand"] = _legs_stand(a, idx, el, amp, findings)
             desc = {i: (kind, int(e), _round(float(A))) for i, e, A in zip(idx, el, amp)}
             return clock, desc
     raise ProbeError(f"{a.name}: clock phases {np.round(phi, 3).tolist()} fit no known clock term")
@@ -1091,6 +1141,8 @@ def contracts(r: ProbeResult, mjcf: str | Path, source: str | Path) -> dict[str,
                 term["params"] = {"period": ck["period"]}
                 if ck.get("clock_offset_steps"):
                     term["params"]["clock_offset_steps"] = ck["clock_offset_steps"]
+                if ck.get("stand"):
+                    term["params"]["stand"] = ck["stand"]
             elif t["id"] == "constant":
                 term["params"] = {"value": t["value"]}
             if "index" in t:

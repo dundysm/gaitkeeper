@@ -7,6 +7,7 @@ axis T). Quaternions are (w, x, y, z).
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -341,6 +342,31 @@ def _gait_phase_speed_step(state: Any, s: RawState, p: dict[str, Any], ctx: Term
     return out, ph
 
 
+def _gait_phase_legs_stand_step(state: Any, s: RawState, p: dict[str, Any], ctx: TermContext):
+    """A two-leg clock that a port holds while the command says stand and restarts after:
+    each step both phases advance by dt/period (before use), then, while
+    hypot(vx, vy) < eps_planar and |wz| < eps_yaw, both are set to ``hold``; on the first step
+    after standing they are set to ``resume`` (phases in cycles). Starts at
+    (clock_offset_steps - 1) steps of phase, b ``offset`` behind a."""
+    st = p["stand"]
+    period, offset = float(p["period"]), float(p.get("offset", 0.5))
+    delta = ctx.policy_dt / period
+    if state is None:
+        a0 = (int(p.get("clock_offset_steps", 0)) - 1) * delta
+        state = (a0, a0 + offset, False)
+    a, b, standing = state
+    a, b = (a + delta) % 1.0, (b + delta) % 1.0
+    c = s.command[0]
+    if math.hypot(c[0], c[1]) < float(st["eps_planar"]) and abs(c[2]) < float(st["eps_yaw"]):
+        a, b = (float(x) for x in st["hold"])
+        standing = True
+    elif standing:
+        a, b = (float(x) for x in st["resume"])
+        standing = False
+    A, B = 2 * np.pi * a, 2 * np.pi * b
+    return np.array([np.sin(A), np.sin(B), np.cos(A), np.cos(B)]), (a, b, standing)
+
+
 STATEFUL: dict[str, Callable[..., tuple[np.ndarray, Any]]] = {
     "joint_vel_diff": _joint_vel_diff_step,
     "gait_phase_speed": _gait_phase_speed_step,
@@ -351,6 +377,8 @@ def _stateful(term: dict[str, Any]):
     p = term.get("params", {}) or {}
     if term["id"] == "last_action" and int(p.get("lag", 1)) > 1:
         return _action_lag_step
+    if term["id"] == "gait_phase_legs" and p.get("stand"):
+        return _gait_phase_legs_stand_step
     return STATEFUL.get(term["id"])
 
 

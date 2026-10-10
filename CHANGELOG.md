@@ -11,6 +11,10 @@
   (`policy_io.commands.base_velocity.shaping`, a waypoint follower whose gains, speed cap
   and facing distances are measured). Verification feeds random waypoint tasks too.
   teleop-walking-benchmark's zealot now reads, matching its adapter to 3e-6.
+* A two-leg clock that a port holds while the command says stand and restarts after
+  (`gait_phase_legs` with `params.stand`: the thresholds on planar and yaw speed, the phases
+  it holds at and the phases it restarts from, all measured). holosoma now matches its
+  adapter to 6e-8.
 * Stateful observation terms are written once as a step function, so a whole trace and the
   closed loop build them the same way; the runner applies a contract's command shaping with
   the tour's task (distance, yaw error and the waypoint in the body frame, as the

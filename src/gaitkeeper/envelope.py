@@ -35,9 +35,10 @@ _RUNNER: Runner | None = None
 
 def _init(contract: dict[str, Any], mjcf: str, onnx: str) -> None:
     global _RUNNER
-    from .policy import OnnxPolicy
+    from .policy import load_policy
 
-    _RUNNER = Runner(Contract.from_dict(contract), mjcf, OnnxPolicy(onnx))
+    c = Contract.from_dict(contract)
+    _RUNNER = Runner(c, mjcf, load_policy(c, onnx))
 
 
 def _one(job: tuple[str, tuple[float, float, float], dict[str, Any]]) -> dict[str, Any]:

@@ -37,7 +37,7 @@ from typing import Any
 import mujoco
 import numpy as np
 
-from .commands import shape as shape_command
+from .commands import CommandGate, policy_command
 from .contract import Contract, action_clip_pairs
 from .models import find_id, load_model
 from .terms import ObservationBuilder, quat_to_mat
@@ -621,7 +621,12 @@ class Runner:
         z0 = float(d.qpos[q0 + 2])
         p0 = d.qpos[q0 : q0 + 2].copy()
         builder = ObservationBuilder(self.contract)
+        obs_names = list(self.names) + builder.extra_joints
+        ex_q = np.array([m.joint(j).qposadr[0] for j in builder.extra_joints], dtype=int)
+        ex_d = np.array([m.joint(j).dofadr[0] for j in builder.extra_joints], dtype=int)
         shaping = self.contract.get("policy_io.commands.base_velocity.shaping", None)
+        gate_spec = self.contract.get("policy_io.commands.base_velocity.gate", None)
+        gate = CommandGate(gate_spec, self.policy_dt) if gate_spec else None
         if self.policy is not None and hasattr(self.policy, "reset"):
             self.policy.reset()
         if cfg.policy_mode == "policy" and self.policy is None:
@@ -681,8 +686,14 @@ class Runner:
                         cmd = np.array(c_, dtype=float)
             if cfg.command_source is not None:
                 cmd = np.asarray(cfg.command_source(time, d.qpos[q0 : q0 + 7].copy()), float)
-            if shaping:
-                cmd = shape_command(cmd, getattr(cfg.command_source, "task", None), shaping)
+            if hasattr(self.policy, "command"):  # a policy that picks its graph by command
+                self.policy.command = np.array(cmd, dtype=float)
+            # what the policy is given: the harness's command, shaped and gated by the port
+            pcmd = cmd
+            if shaping or gate is not None:
+                pcmd = policy_command(
+                    cmd, getattr(cfg.command_source, "task", None), shaping, gate, t
+                )
             quat = d.qpos[q0 + 3 : q0 + 7].copy()
             w_b = d.qvel[v0 + 3 : v0 + 6].copy()
             qj = d.qpos[b.qadr].copy()
@@ -694,8 +705,10 @@ class Runner:
                 elif ext_obs[i] == "default":
                     qj[i] = self.default[i]
                     vj[i] = 0.0
+            if len(ex_q):
+                qj, vj = np.r_[qj, d.qpos[ex_q]], np.r_[vj, d.qvel[ex_d]]
             obs = builder.step(
-                quat, w_b, qj, vj, self.names, cmd, t, prev_action, d.qvel[v0 : v0 + 3].copy()
+                quat, w_b, qj, vj, obs_names, pcmd, t, prev_action, d.qvel[v0 : v0 + 3].copy()
             )
             if cfg.policy_mode == "policy":
                 a = self.policy.step(obs)
@@ -714,7 +727,7 @@ class Runner:
             if log is not None:
                 log["obs"].append(obs.astype(np.float32))
                 log["action"].append(a.astype(np.float32))
-                log["command"].append(cmd.copy())
+                log["command"].append(np.array(pcmd, dtype=float))
                 log["qpos"].append(d.qpos.copy())
                 log["qvel"].append(d.qvel.copy())
                 log["target"].append(target.copy())

@@ -252,13 +252,12 @@ def _tour_job(job: tuple) -> dict[str, Any]:
     import mujoco
 
     from .contract import Contract
-    from .policy import OnnxPolicy
+    from .policy import load_policy
     from .runner import RunConfig, Runner
 
     contract_d, mjcf, policy_path, seed, o = job
     c = Contract.from_dict(contract_d)
-    rec = c.get("policy_io.graph.recurrent", None) or None
-    r = Runner(c, mjcf, OnnxPolicy(policy_path, rec))
+    r = Runner(c, mjcf, load_policy(c, policy_path))
     m = mujoco.MjModel.from_xml_path(str(mjcf))
     lim = c.get("policy_io.commands.base_velocity.limit", None) or {}
     wps = o.waypoints if o.waypoints is not None else bench_waypoints(seed)

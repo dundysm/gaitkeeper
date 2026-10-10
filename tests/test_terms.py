@@ -269,3 +269,110 @@ def test_builder_matches_the_whole_trace_for_stateful_terms():
             s.prev_action[t],
         )
         assert np.allclose(got, whole[t]), t
+
+
+def test_joint_terms_can_observe_joints_no_action_drives():
+    from gaitkeeper.terms import ObservationBuilder, build_observation
+
+    T = 6
+    rng = np.random.default_rng(3)
+    q = rng.normal(0, 0.1, (T, 3))
+    v = rng.normal(0, 1.0, (T, 3))
+    s = RawState(
+        np.tile([1.0, 0, 0, 0], (T, 1)),
+        np.zeros((T, 3)),
+        q,
+        v,
+        ["j0", "j1", "waist"],
+        np.zeros((T, 3)),
+        np.arange(T),
+        np.zeros(T, bool),
+        np.zeros((T, 2)),
+    )
+    joints = ["j0", "j1", "waist"]
+    terms = [
+        {"id": "joint_pos_rel", "dim": 3, "params": {"joints": joints, "default": {"waist": 0.05}}},
+        {"id": "joint_vel_rel", "dim": 3, "params": {"joints": joints}},
+    ]
+    c = _contract_for(terms)
+    obs, _, _ = build_observation(s, c)
+    assert np.allclose(obs[:, :3], q - [0.1, -0.2, 0.05])
+    assert np.allclose(obs[:, 3:], v)
+    b = ObservationBuilder(c)
+    assert b.extra_joints == ["waist"]
+    for t in range(T):
+        got = b.step([1.0, 0, 0, 0], np.zeros(3), q[t], v[t], joints, np.zeros(3), t, np.zeros(2))
+        assert np.allclose(got, obs[t])
+
+
+def test_a_port_that_builds_its_first_observation_late():
+    from gaitkeeper.terms import ObservationBuilder, build_observation
+
+    s, q, a, cmd, ep, reset = _walk(T=30)
+    terms = [{"id": "joint_pos_rel", "dim": 2}, {"id": "velocity_commands", "dim": 3}]
+    hist = {"length": 3, "layout": "time_major", "init": "zeros", "first_frame": "zeros"}
+    c = _contract_for(terms, hist)
+    whole, _, _ = build_observation(s, c)
+    assert not whole[0].any() and not whole[25].any()  # nothing at an episode's first step
+    assert np.allclose(whole[1, :10], 0.0) and np.allclose(whole[1, 10:12], q[1] - [0.1, -0.2])
+    b = ObservationBuilder(c)
+    for t in range(30):
+        got = b.step(
+            [1.0, 0, 0, 0],
+            np.zeros(3),
+            q[t],
+            np.zeros(2),
+            ["j0", "j1"],
+            cmd[t],
+            int(ep[t]),
+            s.prev_action[t],
+        )
+        assert np.allclose(got, whole[t]), t
+
+
+def test_gated_command_terms():
+    from gaitkeeper.terms import term_values
+
+    T = 8
+    gate = np.array([0, 0, 1, 1, 1, 0, 1, 1], float)
+    cmd = np.c_[np.full((T, 3), 0.3) * gate[:, None], gate]
+    s = _state(np.tile([1.0, 0, 0, 0], (T, 1)), cmd=cmd)
+    terms = [
+        {"id": "command_gate", "dim": 1},
+        {"id": "gait_phase_gated", "dim": 2, "params": {"period": 0.1, "advance_first": True}},
+        {"id": "velocity_commands", "dim": 3},
+    ]
+    v = term_values(s, terms, CTX)
+    assert v["command_gate"][:, 0].tolist() == gate.tolist()
+    assert np.allclose(v["velocity_commands"], cmd[:, :3])
+    clk, want = 0.0, []
+    for g in gate:
+        clk += 0.02 * g  # the clock runs only while the gate is open, before it is read
+        want.append([np.sin(2 * np.pi * (clk % 0.1) / 0.1), np.cos(2 * np.pi * (clk % 0.1) / 0.1)])
+    assert np.allclose(v["gait_phase_gated"], want, atol=1e-5)
+
+
+def test_feet_clock_warps_stance_and_holds_at_a_zero_command():
+    from gaitkeeper.terms import term_values, warp_stance
+
+    T = 30
+    cmd = np.full((T, 3), 0.2)
+    cmd[10:14] = 0.0
+    s = _state(np.tile([1.0, 0, 0, 0], (T, 1)), cmd=cmd)
+    p = {
+        "frequency": 1.5,
+        "stance_ratio": 0.6,
+        "offsets": [0.5, 0.0],
+        "start": 0.3,
+        "stand": {"hold": 0.3},
+    }
+    v = term_values(s, [{"id": "gait_phase_feet", "dim": 2, "params": p}], CTX)["gait_phase_feet"]
+    g, want = 0.3, []
+    for t in range(T):
+        g = (g + 0.03) % 1.0
+        feet = [(g + 0.5) % 1.0, g]
+        if not cmd[t].any():
+            g, feet = 0.3, [0.3, 0.3]
+        want.append(np.sin(2 * np.pi * warp_stance(np.array(feet), 0.6)))
+    assert np.allclose(v, want)
+    assert np.allclose(warp_stance(np.array([0.0, 0.3, 0.6, 0.8]), 0.6), [0, 0.25, 0.5, 0.75])

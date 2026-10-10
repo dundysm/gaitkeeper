@@ -45,6 +45,7 @@ _PROLOGUE = r"""
 #include <unordered_map>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 using std::isfinite;
@@ -143,9 +144,11 @@ struct Engine {
   std::vector<int> in_sizes, out_sizes;  // per batch row
   std::vector<std::vector<float>> seen;  // inputs of the last run, concatenated per input
   int runs = 0;
+  int index = 0;
 };
 static std::vector<Engine*> g_engines;
 static std::vector<float> g_action;  // returned by every engine as its first output
+static std::map<int, std::vector<float>> g_engine_action;  // ... unless set for that engine
 
 static int per_row(const std::vector<int>& shape) {
   int n = 1;
@@ -157,6 +160,7 @@ inline std::shared_ptr<Engine> engine_make(const std::string& path, int, int obs
   e->path = path;
   e->in_sizes = {obs_dim};
   e->out_sizes = {act_dim};
+  e->index = int(g_engines.size());
   g_engines.push_back(e.get());
   return e;
 }
@@ -167,6 +171,7 @@ inline std::shared_ptr<Engine> engine_make(
   e->path = path;
   for (auto& t : in) e->in_sizes.push_back(per_row(t.shape));
   for (auto& t : out) e->out_sizes.push_back(per_row(t.shape));
+  e->index = int(g_engines.size());
   g_engines.push_back(e.get());
   return e;
 }
@@ -174,10 +179,12 @@ inline void engine_run(Engine& e, const float* const* in, float* const* out, int
   e.seen.clear();
   for (size_t k = 0; k < e.in_sizes.size(); ++k)
     e.seen.emplace_back(in[k], in[k] + size_t(batch) * e.in_sizes[k]);
+  auto own = g_engine_action.find(e.index);
+  const std::vector<float>& act = own != g_engine_action.end() ? own->second : g_action;
   for (size_t k = 0; k < e.out_sizes.size(); ++k) {
     const size_t n = size_t(batch) * e.out_sizes[k];
     for (size_t i = 0; i < n; ++i)
-      out[k][i] = k == 0 && i < g_action.size() ? g_action[i] : 0.0f;
+      out[k][i] = k == 0 && i < act.size() ? act[i] : 0.0f;
   }
   ++e.runs;
 }
@@ -188,17 +195,51 @@ inline void engine_run(Engine& e, const float* obs, float* act, int batch) {
 }
 }  // namespace policy_api
 constexpr int POLICY_NUM_MOTOR = policy_api::NUM_MOTOR;
+#ifndef NV_TENSORRT_MAJOR
+#define NV_TENSORRT_MAJOR 10
+#define NV_TENSORRT_MINOR 0
+#endif
 """
 
 _EPILOGUE = r"""
 static policy_api::Policy* g_policy = nullptr;
+static std::string g_variant;
+template <class T> static policy_api::Policy* gk_default() {
+  if constexpr (std::is_default_constructible_v<T>) {
+    return new T();
+  } else {
+    throw std::runtime_error("the policy is made by variant: name one of names()");
+  }
+}
+static policy_api::Policy* gk_make() {
+#ifdef GK_FACTORY
+  if (!g_variant.empty()) {
+    auto p = GK_NS::make(g_variant);
+    if (!p) throw std::runtime_error("no variant '" + g_variant + "' in names()");
+    return p.release();
+  }
+#endif
+  return gk_default<GK_CLASS>();
+}
 extern "C" {
+void gk_set_variant(const char* v) { g_variant = v ? v : ""; }
+int gk_variants(char* out, int cap) {
+  std::string all;
+#ifdef GK_FACTORY
+  for (const auto& n : GK_NS::names()) all += n + "\n";
+#endif
+  if (out && cap > 0) {
+    std::strncpy(out, all.c_str(), size_t(cap) - 1);
+    out[cap - 1] = 0;
+  }
+  return int(all.size());
+}
 int gk_new() {
   delete g_policy;
   g_policy = nullptr;
   policy_api::g_engines.clear();
   try {
-    g_policy = new GK_CLASS();
+    g_policy = gk_make();
     g_policy->init(1);
   } catch (const std::exception& e) {
     std::fprintf(stderr, "gk_new: %s\n", e.what());
@@ -206,7 +247,13 @@ int gk_new() {
   }
   return int(policy_api::g_engines.size());
 }
-void gk_set_action(const float* a, int n) { policy_api::g_action.assign(a, a + n); }
+void gk_set_action(const float* a, int n) {
+  policy_api::g_action.assign(a, a + n);
+  policy_api::g_engine_action.clear();
+}
+void gk_set_engine_action(int k, const float* a, int n) {
+  policy_api::g_engine_action[k].assign(a, a + n);
+}
 void gk_step(const float* q, const float* dq, const float* gyro, const float* lin_vel,
              const float* gravity, const float* cmd, const float* task, const float* arm_pose,
              const float* quat, float* q_target) {
@@ -307,6 +354,13 @@ def _launches(src: str) -> str:
         i = q + 1
 
 
+# A port with variants (gr00t_wbc_h066_p012, ...) is made by name: names() lists them and
+# make(name) builds one, as the harness's policy_names() and make_policy() do.
+_FACTORY = re.compile(
+    r"std::unique_ptr\s*<\s*policy_api::Policy\s*>\s+make\s*\(\s*const\s+std::string\s*&"
+)
+
+
 def _namespace(src: str) -> str:
     m = re.search(r"^\s*namespace\s+(\w+)\s*\{", src, re.M)
     if not m:
@@ -335,7 +389,10 @@ def build(policy_cpp: str | Path, cls: str = "Policy") -> Path:
     src = Path(policy_cpp).read_text()
     ns = _namespace(src)
     body = _launches(src)
-    code = _PROLOGUE + "\n" + body + f"\n#define GK_CLASS {ns}::{cls}\n" + _EPILOGUE
+    defs = f"\n#define GK_CLASS {ns}::{cls}\n#define GK_NS {ns}\n"
+    if _FACTORY.search(src) and re.search(r"\bnames\s*\(\s*\)\s*\{", src):
+        defs += "#define GK_FACTORY 1\n"
+    code = _PROLOGUE + "\n" + body + defs + _EPILOGUE
     key = hashlib.sha256((code + "v1").encode()).hexdigest()[:16]
     d = _cache_dir()
     lib = d / f"{ns}_{cls}_{key}.so"
@@ -377,14 +434,59 @@ def _p(a: np.ndarray):
     return a.ctypes.data_as(_F)
 
 
+def _sandbox(policy_cpp: Path) -> Path:
+    """A working directory for the adapter, as the harness runs it from the benchmark's root:
+    ``policies`` links to the checkout's, and anything the port writes (a patched model under
+    ``build/``, say) lands here, not in the checkout."""
+    root = policy_cpp.resolve().parent.parent.parent
+    key = hashlib.sha256(str(root).encode()).hexdigest()[:12]
+    d = _cache_dir().parent / "twb_roots" / key
+    (d / "build" / "trt").mkdir(parents=True, exist_ok=True)
+    link = d / "policies"
+    if not link.exists():
+        try:
+            link.symlink_to(root / "policies", target_is_directory=True)
+        except FileExistsError:
+            pass
+    return d
+
+
+def _variants_of(lib) -> list[str]:
+    lib.gk_variants.restype = ctypes.c_int
+    n = lib.gk_variants(None, 0)
+    buf = ctypes.create_string_buffer(n + 1)
+    lib.gk_variants(buf, n + 1)
+    return [v for v in buf.value.decode().split("\n") if v]
+
+
+def variants(policy_cpp: str | Path, cls: str = "Policy") -> list[str]:
+    """The names a port with variants is made by (its ``names()``); empty for a plain port."""
+    return _variants_of(ctypes.CDLL(str(build(policy_cpp, cls))))
+
+
 class Adapter:
     """One compiled adapter. ``reset`` makes a fresh policy object; ``step`` runs it once on
-    the given inputs and returns the motor targets and what each engine was given."""
+    the given inputs and returns the motor targets and what each engine was given.
+    ``variant`` names the one to make when the port has several (its ``names()``)."""
 
-    def __init__(self, policy_cpp: str | Path, cls: str = "Policy"):
+    def __init__(self, policy_cpp: str | Path, cls: str = "Policy", variant: str | None = None):
         self.path = Path(policy_cpp)
         self.lib = ctypes.CDLL(str(build(policy_cpp, cls)))
         L = self.lib
+        self.variants = _variants_of(L)
+        if self.variants and variant is None:
+            raise ValueError(
+                f"{policy_cpp} has variants; name one with variant=: {', '.join(self.variants)}"
+            )
+        if variant is not None and variant not in self.variants:
+            raise ValueError(
+                f"{policy_cpp}: no variant {variant!r}"
+                + (f" (it has {', '.join(self.variants)})" if self.variants else "")
+            )
+        self.variant = variant
+        L.gk_set_variant.argtypes = [ctypes.c_char_p]
+        L.gk_set_variant((variant or "").encode())
+        self._root = _sandbox(self.path)
         L.gk_new.restype = ctypes.c_int
         L.gk_name.restype = ctypes.c_char_p
         L.gk_engine_path.restype = ctypes.c_char_p
@@ -416,7 +518,13 @@ class Adapter:
         self.obs_dim = self.engines[0]["inputs"][0]
 
     def reset(self) -> None:
-        if self.lib.gk_new() < 0:
+        here = os.getcwd()
+        os.chdir(self._root)
+        try:
+            ok = self.lib.gk_new() >= 0
+        finally:
+            os.chdir(here)
+        if not ok:
             raise RuntimeError(f"{self.path}: the policy object could not be made")
 
     def step(
@@ -431,12 +539,17 @@ class Adapter:
         arm_pose: np.ndarray | None = None,
         quat=(1, 0, 0, 0),
         task: np.ndarray | None = None,
+        engine_actions: dict[int, np.ndarray] | None = None,
     ) -> tuple[np.ndarray, list[np.ndarray]]:
+        """One step. Every engine returns ``action``, except those ``engine_actions`` names."""
         f = lambda v, n: np.ascontiguousarray(  # noqa: E731
             np.zeros(n) if v is None else v, dtype=np.float32
         )
         a = f(action, self.act_dim)
         self.lib.gk_set_action(_p(a), len(a))
+        for k, ea in (engine_actions or {}).items():
+            e = f(ea, self.engines[k]["outputs"][0])
+            self.lib.gk_set_engine_action(int(k), _p(e), len(e))
         tgt = np.zeros(NUM_MOTOR, np.float32)
         args = [
             f(q, NUM_MOTOR),

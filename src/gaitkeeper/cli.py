@@ -147,10 +147,9 @@ def _policy(args: argparse.Namespace, contract: Contract, required: bool = True)
         if required:
             _usage("give --policy (or --onnx)")
         return None
-    from .policy import OnnxPolicy
+    from .policy import load_policy
 
-    rec = contract.get("policy_io.graph.recurrent", None)
-    return OnnxPolicy(path, rec or None)
+    return load_policy(contract, path)
 
 
 def _triple(text: str) -> tuple[float, float, float]:
@@ -362,9 +361,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     policy = None
     pol_path = args.policy or args.onnx
     if pol_path:
-        from .policy import OnnxPolicy
+        from .policy import load_policy
 
-        policy = OnnxPolicy(pol_path)
+        policy = load_policy(contract, pol_path)
     task = None
     if args.task_schedule:
         from .runner import load_schedule
@@ -474,18 +473,34 @@ def cmd_tour(args: argparse.Namespace) -> int:
     return 0 if out["complete"] == len(out["runs"]) else 5
 
 
-def _read_adapter(path: str, mjcf: str, cls: str = "Policy"):
+def _read_adapter(path: str, mjcf: str, cls: str = "Policy", variant: str | None = None):
     from .readers.twb_probe import ProbeError, read_twb_adapter
 
     try:
-        return read_twb_adapter(path, mjcf, cls)
+        return read_twb_adapter(path, mjcf, cls, variant)
     except ProbeError as e:
         print(f"gaitkeeper: {path}: unsupported: {e}", file=sys.stderr)
         raise SystemExit(6) from None
+    except ValueError as e:
+        if "variant" in str(e):
+            _usage(str(e))
+        raise
 
 
 def cmd_adapter(args: argparse.Namespace) -> int:
-    r, cs, v = _read_adapter(args.adapter, args.mjcf, args.cls)
+    from .readers.twb_adapter import variants
+
+    names = [args.variant] if args.variant else (variants(args.adapter, args.cls) or [None])
+    rc = 0
+    for v in names:
+        if len(names) > 1:
+            print(f"== variant {v}")
+        rc = max(rc, _adapter_one(args, v))
+    return rc
+
+
+def _adapter_one(args: argparse.Namespace, variant: str | None) -> int:
+    r, cs, v = _read_adapter(args.adapter, args.mjcf, args.cls, variant)
     out = Path(args.out or ".")
     out.mkdir(parents=True, exist_ok=True)
     print(f"Adapter {r.name}: obs {r.obs_dim}, actions {r.act_dim}, owned() {r.owned}")
@@ -631,7 +646,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
     from .bench import STAGE_TEXT, run_bench
 
     if args.adapter:
-        _, cs, v = _read_adapter(args.adapter, args.mjcf)
+        _, cs, v = _read_adapter(args.adapter, args.mjcf, variant=args.variant)
         if not v["ok"]:
             print(
                 "warning: the adapter's observation is not reproduced (see gaitkeeper adapter)",
@@ -657,7 +672,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
         rows = d["waypoints"] if isinstance(d, dict) else d
         wps = [(float(r[0]), float(r[1]), float(r[2]) if len(r) > 2 else 0.0) for r in rows]
     name = args.name or (
-        Path(args.adapter).parent.name
+        (args.variant or Path(args.adapter).parent.name)
         if args.adapter
         else Path(args.contract or args.deploy or path).stem
     )
@@ -1201,6 +1216,9 @@ def main(argv: list[str] | None = None) -> int:
         help="teleop-walking-benchmark policy.cpp: read both contracts from it (needs a C++ compiler)",
     )
     p.add_argument(
+        "--variant", help="with --adapter: which of the port's variants (its names()) to run"
+    )
+    p.add_argument(
         "--upstream", help="contract of the policy as its authors trained or deployed it"
     )
     p.add_argument("--upstream-deploy", help="the same, from the authors' Unitree deploy.yaml")
@@ -1240,6 +1258,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--mjcf", required=True, help="the benchmark's G1 MJCF (for armature gains)")
     p.add_argument("--out", help="directory for <name>.trained.yaml, .port.yaml, .probe.json")
     p.add_argument("--cls", default="Policy", help="policy class in the adapter's namespace")
+    p.add_argument(
+        "--variant", help="for a port with variants (its names()): read this one (default: all)"
+    )
     p.set_defaults(fn=cmd_adapter)
 
     p = sub.add_parser("infer", help="observation layout from a trace, abstaining when ambiguous")

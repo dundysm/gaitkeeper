@@ -115,7 +115,7 @@ def _winit(contract: dict[str, Any], mjcf: str, onnx: str) -> None:
 def _runner(kp_scale: float = 1.0) -> Runner:
     rs = _W["runners"]
     if kp_scale not in rs:
-        from .policy import OnnxPolicy
+        from .policy import load_policy
 
         c = Contract.from_dict(_W["contract"])
         if kp_scale != 1.0:
@@ -126,7 +126,7 @@ def _runner(kp_scale: float = 1.0) -> Runner:
                 "user",
                 f"fragility sweep: kp x{kp_scale:g}",
             )
-        rs[kp_scale] = Runner(c, _W["mjcf"], OnnxPolicy(_W["onnx"]))
+        rs[kp_scale] = Runner(c, _W["mjcf"], load_policy(c, _W["onnx"]))
     return rs[kp_scale]
 
 

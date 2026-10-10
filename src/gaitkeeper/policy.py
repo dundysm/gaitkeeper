@@ -4,6 +4,9 @@ Recurrent graphs take their state as extra inputs and return the next state as
 extra outputs. The pairing is in-order (extra input k goes with extra output k)
 unless the contract's ``policy_io.graph.recurrent`` names it. State starts at
 zero and is zeroed again at every reset.
+
+A port that runs two graphs and picks one by the command each step (a walking and a
+standing policy) states it as ``policy_io.graph.switch``; ``load_policy`` builds either.
 """
 
 from __future__ import annotations
@@ -75,3 +78,69 @@ class OnnxPolicy:
                 self.reset()
             out[k] = self.step(obs[k])
         return out
+
+
+class SwitchedPolicy:
+    """Two exported graphs and a rule choosing one each step by the harness's command:
+    ``above`` while the command's norm exceeds ``threshold``, else ``below`` (gr00t_wbc's
+    walking and balance policies). The caller sets ``command`` before each ``step``."""
+
+    def __init__(self, models: dict[str, OnnxPolicy], rule: dict[str, Any]) -> None:
+        self.models = models
+        self.rule = rule
+        self.threshold = float(rule["threshold"])
+        self.by = rule.get("by", "command_norm")
+        first = models["above"]
+        self.path = first.path
+        self.n_in, self.n_out = first.n_in, first.n_out
+        self.command = np.zeros(3)
+
+    @property
+    def is_recurrent(self) -> bool:
+        return any(m.is_recurrent for m in self.models.values())
+
+    def reset(self) -> None:
+        for m in self.models.values():
+            m.reset()
+
+    def choose(self, command: np.ndarray) -> str:
+        c = np.asarray(command, dtype=np.float64)[:3]
+        v = float(np.linalg.norm(c[:2] if self.by == "command_planar_norm" else c))
+        return "above" if v > self.threshold else "below"
+
+    def step(self, obs: np.ndarray) -> np.ndarray:
+        return self.models[self.choose(self.command)].step(obs)
+
+    def __call__(
+        self, obs: np.ndarray, reset: np.ndarray | None = None, command: np.ndarray | None = None
+    ) -> np.ndarray:
+        """Rows in order; ``command`` per row picks the graph (without it, ``above``)."""
+        obs = np.asarray(obs, dtype=np.float32)
+        out = np.empty((obs.shape[0], self.n_out), dtype=np.float32)
+        self.reset()
+        for k in range(obs.shape[0]):
+            if reset is not None and k > 0 and reset[k]:
+                self.reset()
+            self.command = (
+                np.full(3, np.inf) if command is None else np.asarray(command[k], dtype=float)
+            )
+            out[k] = self.step(obs[k])
+        return out
+
+
+def load_policy(contract: Any, path: str | Path) -> OnnxPolicy | SwitchedPolicy:
+    """The policy a contract runs from ``path``: one graph, or the pair its
+    ``policy_io.graph.switch`` names (found next to ``path``)."""
+    rec = contract.get("policy_io.graph.recurrent", None) or None
+    sw = contract.get("policy_io.graph.switch", None)
+    if not sw:
+        return OnnxPolicy(path, rec)
+    d = Path(path).parent
+    files = {k: d / Path(str(sw[k])).name for k in ("above", "below")}
+    missing = [str(f) for f in files.values() if not f.exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"the contract switches between {files['above'].name} and {files['below'].name} "
+            f"by the command; not found next to {path}: {missing}"
+        )
+    return SwitchedPolicy({k: OnnxPolicy(f, rec) for k, f in files.items()}, sw)

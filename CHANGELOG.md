@@ -15,6 +15,29 @@
   (`gait_phase_legs` with `params.stand`: the thresholds on planar and yaw speed, the phases
   it holds at and the phases it restarts from, all measured). holosoma now matches its
   adapter to 6e-8.
+* More of teleop-walking-benchmark's ports read, each matching its adapter to 1e-7 or
+  better on random inputs:
+  * decoupled_wbc and gr00t_wbc, made by name (`--variant`; `gaitkeeper adapter` reads every
+    variant when none is named). gr00t_wbc runs a walking and a standing graph picked by the
+    command's norm: `policy_io.graph.switch`, loaded next to the given model by
+    `policy.load_policy`.
+  * homie: joint terms that observe joints no action drives (`params.joints`, with
+    `params.default` for their offsets), a port that feeds zeros at the first step
+    (`history.first_frame: zeros`), and a command the port makes from the task
+    (`shaping.kind: speed_to_distance`: the command's direction at min(pos_p x distance,
+    speed_cap), clamped, with the port's own yaw toward the target that faces the direction
+    of travel when far).
+  * falcon: a gate that passes the command only while it is nonzero, after a warm-up
+    (`policy_io.commands.base_velocity.gate`), the flag it feeds (`command_gate`) and a
+    clock that runs only while the gate is open (`gait_phase_gated`).
+  * openwbt: clock inputs per foot as walk-these-ways builds them (`gait_phase_feet`:
+    frequency, stance ratio, offsets, start, and the phase held while the command is zero).
+* Adapters run from a sandbox that links the benchmark's `policies/`, so ports that read
+  or patch their model files at start (handoff, wbc_agile_velocity) construct; what they
+  write stays out of the checkout. TensorRT's version macros are defined for ports that
+  name a plan file by them.
+* Every closed loop builds its policy with `load_policy`, so the envelope sweep and the
+  fragility runs carry a recurrent graph's state as the tour does (they did not).
 * Stateful observation terms are written once as a step function, so a whole trace and the
   closed loop build them the same way; the runner applies a contract's command shaping with
   the tour's task (distance, yaw error and the waypoint in the body frame, as the

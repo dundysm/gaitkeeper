@@ -249,11 +249,10 @@ _W: dict[str, Any] = {}
 
 
 def _winit(contract: dict[str, Any], model: str, onnx: str) -> None:
-    from .policy import OnnxPolicy
+    from .policy import load_policy
 
     c = Contract.from_dict(contract)
-    rec = c.get("policy_io.graph.recurrent", None)
-    _W["runner"] = Runner(c, model, OnnxPolicy(onnx, rec or None))
+    _W["runner"] = Runner(c, model, load_policy(c, onnx))
 
 
 def _wrun(job: tuple[TaskSpec, int, str | None, Any]) -> tuple[SeedOutcome, dict[str, Any]]:

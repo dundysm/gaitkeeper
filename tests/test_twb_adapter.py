@@ -219,3 +219,113 @@ def test_the_stateful_toy_contract_rebuilds_its_observation():
     bad = cs["port"].copy()
     bad.data["policy_io"]["commands"]["base_velocity"]["shaping"]["params"]["walk_p"] = 1.5
     assert verify(Adapter(TOY2), bad)["per_term"]["velocity_commands"] > 1e-3
+
+
+TOY3 = Path(__file__).parent / "data" / "twb_toy3" / "policy.cpp"
+TOY4 = Path(__file__).parent / "data" / "twb_toy4" / "policy.cpp"
+TOY5 = Path(__file__).parent / "data" / "twb_toy5" / "policy.cpp"
+
+
+@needs_cxx
+def test_a_port_with_variants_is_made_by_name(tmp_path, monkeypatch):
+    from gaitkeeper.readers.twb_adapter import Adapter, variants
+
+    assert variants(TOY3) == ["toy3_low", "toy3_high"]
+    assert variants(TOY2) == []
+    with pytest.raises(ValueError, match="toy3_low, toy3_high"):
+        Adapter(TOY3)
+    with pytest.raises(ValueError, match="no variant"):
+        Adapter(TOY3, variant="toy3_mid")
+    monkeypatch.chdir(tmp_path)
+    a = Adapter(TOY3, variant="toy3_high")
+    assert a.name == "toy3_high" and len(a.engines) == 2
+    # what the port writes beside the benchmark lands in gaitkeeper's sandbox, not here
+    assert not (tmp_path / "build").exists()
+    assert Path.cwd() == tmp_path
+
+
+@needs_cxx
+def test_probe_reads_a_port_that_steers_by_the_task_and_switches_graphs():
+    """homie and gr00t_wbc in miniature: a waist observed but not driven, no observation at
+    the first step, the command's direction kept at a speed set by the distance, its own yaw,
+    and a walking and a standing graph picked by the command."""
+    from gaitkeeper.readers.twb_adapter import Adapter
+    from gaitkeeper.readers.twb_probe import probe
+
+    r = probe(Adapter(TOY3, variant="toy3_low"))
+    assert [t["id"] for t in r.terms] == [
+        "velocity_commands",
+        "constant",
+        "base_ang_vel",
+        "projected_gravity",
+        "joint_pos_rel",
+        "joint_vel_rel",
+        "last_action",
+    ]
+    assert r.observed_extra == [12] and r.extra_default == [0.0]
+    assert r.history["first_frame"] == "zeros" and r.history["length"] == 2
+    assert r.shaping == {
+        "kind": "speed_to_distance",
+        "params": {
+            "pos_p": 0.8,
+            "speed_cap": 0.4,
+            "vx": [-0.25, 0.4],
+            "vy_abs": 0.25,
+            "yaw": {"yaw_p": 1.2, "yaw_rate_abs": 0.8, "face_near_m": 0.35, "face_far_m": 1.0},
+        },
+    }
+    assert r.switch == {
+        "by": "command_norm",
+        "threshold": 0.05,
+        "above": "model_walk.onnx",
+        "below": "model_stand.onnx",
+    }
+    cmd = next(t for t in r.terms if t["id"] == "velocity_commands")
+    assert cmd["scale"] == [2.0, 2.0, 0.25]
+
+
+@needs_cxx
+def test_probe_reads_a_gated_port_and_a_feet_clock():
+    from gaitkeeper.readers.twb_adapter import Adapter
+    from gaitkeeper.readers.twb_probe import probe
+
+    r = probe(Adapter(TOY4))
+    # the gate opens at the first step past 0.5 s, as the port's float32 time compares
+    assert r.gate == {"on": "command_nonzero", "warmup_s": 0.52}
+    assert r.clock == {"id": "gait_phase_gated", "period": 0.8, "advance_first": True}
+    assert [t.get("index") for t in r.terms if t["id"] == "gait_phase_gated"] == [[1], [0]]
+    assert r.shaping["params"] == {
+        "pos_p": 2.0,
+        "speed_cap": 0.9,
+        "vx": [-0.6, 0.9],
+        "vy_abs": 0.5,
+        "yaw": "pass",
+    }
+    r = probe(Adapter(TOY5))
+    assert r.clock == {
+        "id": "gait_phase_feet",
+        "frequency": 1.25,
+        "stance_ratio": 0.55,
+        "stand": {"hold": 0.35},
+        "offsets": [0.5, 0.0],
+        "start": 0.2,
+    }
+
+
+@needs_cxx
+def test_the_new_toy_contracts_rebuild_their_observations():
+    from assets import UMJ_G1, need
+
+    need(UMJ_G1)
+    from gaitkeeper.readers.twb_adapter import Adapter
+    from gaitkeeper.readers.twb_probe import read_twb_adapter, verify
+
+    ports = {}
+    for toy, variant in ((TOY3, "toy3_high"), (TOY4, None), (TOY5, None)):
+        r, cs, v = read_twb_adapter(toy, UMJ_G1, variant=variant)
+        assert v["ok"], (toy, v)
+        ports[toy] = cs["port"]
+    # a wrong warm-up is caught: the gate and the clock open a step early
+    bad = ports[TOY4].copy()
+    bad.data["policy_io"]["commands"]["base_velocity"]["gate"]["warmup_s"] = 0.5
+    assert verify(Adapter(TOY4), bad)["per_term"]["command_gate"] > 0.5

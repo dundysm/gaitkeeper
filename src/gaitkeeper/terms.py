@@ -234,12 +234,43 @@ def gait_phase_legs(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndar
     return np.stack([np.sin(a), np.sin(b), np.cos(a), np.cos(b)], axis=1)
 
 
+def term_joints(p: dict[str, Any], ctx: TermContext) -> list[str]:
+    """The joints a joint term observes: ``params.joints`` when the term names them (a port
+    that also observes joints no action drives, the waist the harness holds, say), else the
+    policy's joints."""
+    js = p.get("joints") if p else None
+    return list(js) if js else list(ctx.joint_names)
+
+
+def extra_joints(terms: list[dict[str, Any]], policy_joints: list[str]) -> list[str]:
+    """Joints the observation reads that are not the policy's own, in first-use order."""
+    out: list[str] = []
+    for t in terms:
+        for j in (t.get("params") or {}).get("joints") or []:
+            if j not in policy_joints and j not in out:
+                out.append(j)
+    return out
+
+
+def _term_default(p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    js = p.get("joints") if p else None
+    if not js:
+        return ctx.default_joint_pos
+    own = dict(zip(ctx.joint_names, ctx.default_joint_pos))
+    extra = p.get("default") or {}
+    missing = [j for j in js if j not in own and j not in extra]
+    if missing:
+        raise KeyError(f"joint_pos_rel: no default for {missing} (params.default)")
+    return np.array([float(extra[j]) if j in extra else float(own[j]) for j in js])
+
+
 def joint_pos_rel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
-    return s.joint_pos[:, s.joint_index(ctx.joint_names)] - ctx.default_joint_pos[None]
+    js = term_joints(p, ctx)
+    return s.joint_pos[:, s.joint_index(js)] - _term_default(p, ctx)[None]
 
 
 def joint_vel_rel(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
-    return s.joint_vel[:, s.joint_index(ctx.joint_names)].copy()
+    return s.joint_vel[:, s.joint_index(term_joints(p, ctx))].copy()
 
 
 def last_action(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
@@ -290,7 +321,7 @@ def _action_lag_step(state: Any, s: RawState, p: dict[str, Any], ctx: TermContex
 def _joint_vel_diff_step(state: Any, s: RawState, p: dict[str, Any], ctx: TermContext):
     """Joint velocity as the change in measured position over one policy step, zero at the
     first step after a reset (a port that never reads the simulator's velocity)."""
-    q = s.joint_pos[0, s.joint_index(ctx.joint_names)]
+    q = s.joint_pos[0, s.joint_index(term_joints(p, ctx))]
     dt = float(p.get("dt", ctx.policy_dt))
     out = np.zeros_like(q) if state is None else (q - state) / dt
     if p.get("arithmetic") == "float32":
@@ -342,6 +373,58 @@ def _gait_phase_speed_step(state: Any, s: RawState, p: dict[str, Any], ctx: Term
     return out, ph
 
 
+def command_gate(s: RawState, p: dict[str, Any], ctx: TermContext) -> np.ndarray:
+    """1 while the port's command gate is open, else 0 (the fourth element of the command a
+    gated contract builds; 1 when the command has none)."""
+    c = s.command
+    return (c[:, 3:4] if c.shape[1] > 3 else np.ones((c.shape[0], 1))).astype(np.float64)
+
+
+def _gait_phase_gated_step(state: Any, s: RawState, p: dict[str, Any], ctx: TermContext):
+    """[sin, cos] of a clock that runs only while the command gate is open (a port that
+    starts its gait when told to walk; falcon): each open step adds dt to a float32 clock
+    in seconds, before it is read unless ``advance_first`` is false; the phase is
+    fmod(clock, period) / period."""
+    f = np.float32
+    clk = f(0.0) if state is None else f(state)
+    c = s.command[0]
+    open_ = (float(c[3]) if len(c) > 3 else 1.0) > 0.5
+    first = bool(p.get("advance_first", True))
+    if open_ and first:
+        clk = f(clk + f(ctx.policy_dt))
+    period = f(p["period"])
+    ph = f(np.fmod(clk, period) / period)
+    a = f(2.0) * f(np.pi) * ph
+    out = np.array([np.sin(a), np.cos(a)], dtype=f).astype(np.float64)
+    if open_ and not first:
+        clk = f(clk + f(ctx.policy_dt))
+    return out, clk
+
+
+def warp_stance(x: np.ndarray | float, ratio: float):
+    """A foot's phase warped so its stance (phase below ``ratio``) fills the first half
+    cycle and its swing the second (walk-these-ways' gait indices)."""
+    x = np.asarray(x, dtype=np.float64)
+    return np.where(x < ratio, 0.5 * x / ratio, 0.5 + 0.5 * (x - ratio) / (1.0 - ratio))
+
+
+def _gait_phase_feet_step(state: Any, s: RawState, p: dict[str, Any], ctx: TermContext):
+    """sin(2 pi warp(phase)) for each foot (walk-these-ways' clock inputs; openwbt): a gait
+    index advances by dt * frequency each step before it is read, from ``start`` at an
+    episode's start; foot k's phase is the index plus offsets[k], warped by stance_ratio
+    (``warp_stance``). With ``stand``, while the command is exactly zero the index and every
+    foot are set to ``stand.hold``."""
+    g = float(p.get("start", 0.0)) if state is None else float(state)
+    g = math.fmod(g + ctx.policy_dt * float(p["frequency"]), 1.0)
+    feet = [math.fmod(g + float(o), 1.0) for o in p["offsets"]]
+    st = p.get("stand")
+    if st and not np.any(np.asarray(s.command[0][:3]) != 0.0):
+        g = float(st["hold"])
+        feet = [g] * len(feet)
+    out = np.sin(2.0 * np.pi * warp_stance(np.array(feet), float(p["stance_ratio"])))
+    return out, g
+
+
 def _gait_phase_legs_stand_step(state: Any, s: RawState, p: dict[str, Any], ctx: TermContext):
     """A two-leg clock that a port holds while the command says stand and restarts after:
     each step both phases advance by dt/period (before use), then, while
@@ -370,6 +453,8 @@ def _gait_phase_legs_stand_step(state: Any, s: RawState, p: dict[str, Any], ctx:
 STATEFUL: dict[str, Callable[..., tuple[np.ndarray, Any]]] = {
     "joint_vel_diff": _joint_vel_diff_step,
     "gait_phase_speed": _gait_phase_speed_step,
+    "gait_phase_gated": _gait_phase_gated_step,
+    "gait_phase_feet": _gait_phase_feet_step,
 }
 
 
@@ -409,6 +494,9 @@ TERMS: dict[str, TermFn] = {
     "constant": constant,
     "joint_vel_diff": _scan_term(_joint_vel_diff_step),
     "gait_phase_speed": _scan_term(_gait_phase_speed_step),
+    "gait_phase_gated": _scan_term(_gait_phase_gated_step),
+    "gait_phase_feet": _scan_term(_gait_phase_feet_step),
+    "command_gate": command_gate,
 }
 
 
@@ -496,9 +584,16 @@ def assemble(
     init = history.get("init", "repeat_first")
     order = history.get("order", "oldest_first")
     layout = history.get("layout", "term_major")
-    windows = {
-        term_key(t): stack_history(values[term_key(t)], reset, length, init, order) for t in terms
-    }
+    first = np.asarray(reset, bool).copy()
+    if first.size:
+        first[0] = True
+    zero_first = history.get("first_frame") == "zeros"
+    windows = {}
+    for t in terms:
+        v = values[term_key(t)]
+        if zero_first:  # the port builds no observation at an episode's first step
+            v = np.where(first[:, None], 0.0, v)
+        windows[term_key(t)] = stack_history(v, reset, length, init, order)
     t_len = reset.shape[0]
     if layout == "term_major":
         parts = [windows[term_key(t)].reshape(t_len, -1) for t in terms]
@@ -569,6 +664,9 @@ class ObservationBuilder:
         self.history = dict(group.get("history", {}) or {})
         self.length = int(self.history.get("length", 1))
         self.ctx = context_from_contract(contract)
+        # joints the observation reads beyond the policy's own: the caller passes their
+        # positions and velocities after the policy joints'
+        self.extra_joints = extra_joints(self.terms, self.ctx.joint_names)
         self.buffers: dict[str, np.ndarray] = {}
         self.states: dict[str, Any] = {}
 
@@ -607,8 +705,11 @@ class ObservationBuilder:
             v, self.states[k] = st(None if reset else self.states.get(k), s, p, self.ctx)
             values[k] = apply_clip_scale(_select(v[None], p), term, self.clip_then_scale)
         init = self.history.get("init", "repeat_first")
+        zero_first = reset and self.history.get("first_frame") == "zeros"
         for t in self.terms:
             x = values[term_key(t)][0]
+            if zero_first:
+                x = np.zeros_like(x)
             buf = self.buffers.get(term_key(t))
             if reset or buf is None:
                 buf = np.repeat(x[None], self.length, axis=0)

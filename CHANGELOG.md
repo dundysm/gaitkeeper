@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.5.3
+## 0.5.4
+
+* The command line starts without MuJoCo again. Since `doctor --md` (#16), `cli` imported
+  the benchmark module at import time, and with it the runner and MuJoCo, so a base
+  install (`pip install gaitkeeper`, no `[sim]`) failed on every command, `--version`
+  included. The release check caught it: 0.5.3 was tagged and never published to PyPI.
+  A test now starts the command line with MuJoCo absent.
+
+## 0.5.3 (tagged, not published; its changes ship in 0.5.4)
 
 * `gaitkeeper fetch` waits and tries again when the host answers 429 or a 5xx (2, 5, 10
   and 20 s, or the host's `Retry-After` when longer). A first run from a shared address,

@@ -1,3 +1,3 @@
 """gaitkeeper: deployment contract checks against ground truth from the training simulator."""
 
-__version__ = "0.5.3"
+__version__ = "0.5.4"

@@ -163,3 +163,46 @@ def test_huggingface_files_resolve_at_the_pinned_revision():
         repo="me/traces", commit="b" * 40, path="g1/golden.npz"
     )
     assert url == "https://huggingface.co/datasets/me/traces/resolve/" + "b" * 40 + "/g1/golden.npz"
+
+
+def _flaky_urlopen(monkeypatch, failures, code=429, headers=None):
+    """urlopen that answers `code` for the first `failures` calls, then the real file."""
+    import urllib.error
+    import urllib.request
+
+    real = urllib.request.urlopen
+    calls = {"n": 0}
+    waits = []
+
+    def urlopen(url, timeout=None):
+        calls["n"] += 1
+        if calls["n"] <= failures:
+            raise urllib.error.HTTPError(url, code, "Too Many Requests", headers or {}, None)
+        return real(url, timeout=timeout)
+
+    monkeypatch.setattr(fixtures.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(fixtures.time, "sleep", waits.append)
+    return calls, waits
+
+
+def test_fetch_waits_and_retries_when_the_host_rate_limits(tmp_path, monkeypatch):
+    url = _fake_set(tmp_path, monkeypatch)
+    calls, waits = _flaky_urlopen(monkeypatch, failures=2, headers={"Retry-After": "7"})
+    logs = []
+    s = fixtures.fetch("fake", tmp_path / "data", base_url=url, log=logs.append)
+    assert s.path("policy.onnx", tmp_path / "data").read_bytes() == b"policy bytes"
+    assert calls["n"] == 3 and waits == [7.0, 7.0]  # Retry-After when it is longer
+    assert sum("trying again" in m for m in logs) == 2
+
+
+def test_fetch_gives_up_after_its_retries_and_does_not_retry_a_404(tmp_path, monkeypatch):
+    url = _fake_set(tmp_path, monkeypatch)
+    calls, waits = _flaky_urlopen(monkeypatch, failures=99)
+    with pytest.raises(fixtures.FixtureError, match="429"):
+        fixtures.fetch("fake", tmp_path / "a", base_url=url, log=lambda m: None)
+    assert calls["n"] == len(fixtures.RETRY_WAITS) + 1 and waits == list(fixtures.RETRY_WAITS)
+    assert not list((tmp_path / "a").rglob("*.part"))
+    calls, waits = _flaky_urlopen(monkeypatch, failures=99, code=404)
+    with pytest.raises(fixtures.FixtureError, match="404"):
+        fixtures.fetch("fake", tmp_path / "b", base_url=url, log=lambda m: None)
+    assert calls["n"] == 1 and waits == []

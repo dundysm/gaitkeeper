@@ -18,7 +18,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from importlib import resources
@@ -122,6 +124,32 @@ def _sha(p: Path) -> str:
     return h.hexdigest()
 
 
+# A host that is rate limiting (429) or briefly failing (5xx) usually answers a moment
+# later. Shared addresses, a notebook service or a CI runner, see 429 from
+# raw.githubusercontent.com on a first run, so the download waits and tries again.
+RETRY_STATUS = (429, 500, 502, 503, 504)
+RETRY_WAITS = (2.0, 5.0, 10.0, 20.0)
+
+
+def _download(url: str, tmp: Path, timeout: float, log=print) -> None:
+    for attempt in range(len(RETRY_WAITS) + 1):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as r, open(tmp, "wb") as out:
+                while chunk := r.read(1 << 20):
+                    out.write(chunk)
+            return
+        except urllib.error.HTTPError as e:
+            if e.code not in RETRY_STATUS or attempt == len(RETRY_WAITS):
+                raise
+            wait = RETRY_WAITS[attempt]
+            after = e.headers.get("Retry-After") if e.headers else None
+            if after and after.isdigit():
+                wait = min(max(wait, float(after)), 60.0)
+            host = urllib.parse.urlsplit(url).netloc
+            log(f"  HTTP {e.code} from {host}; trying again in {wait:g} s")
+            time.sleep(wait)
+
+
 def fetch(
     name: str,
     root: Path | None = None,
@@ -148,9 +176,7 @@ def fetch(
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(dest.name + ".part")
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as r, open(tmp, "wb") as out:
-                while chunk := r.read(1 << 20):
-                    out.write(chunk)
+            _download(url, tmp, timeout, log)
         except (urllib.error.URLError, OSError) as e:
             tmp.unlink(missing_ok=True)
             raise FixtureError(

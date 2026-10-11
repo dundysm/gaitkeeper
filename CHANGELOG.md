@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+* `gaitkeeper fetch` waits and tries again when the host answers 429 or a 5xx (2, 5, 10
+  and 20 s, or the host's `Retry-After` when longer). A first run from a shared address,
+  a notebook service or a CI runner, could fail on raw.githubusercontent.com's rate limit.
+* A walkthrough of `doctor` on the unitree_rl_lab G1 policy, its report explained section
+  by section (`docs/WALKTHROUGH.md`), and the same run as a Colab notebook
+  (`notebooks/quickstart.ipynb`).
+
 ## 0.5.2
 
 * Ports that keep their own state are read: the adapter probe now recognizes an action

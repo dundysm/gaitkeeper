@@ -78,6 +78,9 @@ pip install "gaitkeeper[sim]"
 gaitkeeper demo
 ```
 
+No install: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dundysm/gaitkeeper/blob/main/notebooks/quickstart.ipynb)
+runs this and `doctor` in a browser, on the CPU, in about three minutes.
+
 `demo` runs the [unitree_rl_lab issue 145](https://github.com/unitreerobotics/unitree_rl_lab/issues/145)
 setup end to end on the CPU: unitree_rl_lab's G1 velocity policy, as shipped, on
 unitree_mujoco's G1 scene, driven through a tour of small commands and in-place
@@ -124,6 +127,9 @@ Unitree `deploy.yaml`, a unitree_rl_gym deploy config, a legged_gym config (`.py
 `--legged-gym-base legged_robot_config.py`) or a gaitkeeper contract. `doctor` then says
 three things, in one to two and a half minutes on a laptop (`--quick` skips the arm
 motion and punches):
+
+[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) goes through this run and its report section
+by section.
 
 1. **Contract**: which fields no file states (the runner assumes defaults for those).
 2. **Command response**: dead zones, commands the policy ignores in this runner.

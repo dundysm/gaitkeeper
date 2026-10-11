@@ -1,6 +1,6 @@
 # Status
 
-October 11, 2026. gaitkeeper 0.5.2 on PyPI (`pip install "gaitkeeper[sim]"`).
+October 11, 2026. gaitkeeper 0.5.3 on PyPI (`pip install "gaitkeeper[sim]"`).
 
 What works, what has been measured, what does not work yet, and what is left. The
 commands, the evidence levels and the method are in the [README](README.md); the
@@ -76,6 +76,14 @@ tests need traces recorded with `tools/record_mjlab.py`.
   `gaitkeeper fetch` says so and downloads them for local use; they are not
   redistributed. unitree_mujoco and MuJoCo Menagerie are BSD-3-Clause.
 * One heavy mjlab job at a time on a 15 GB machine.
+
+## Done in 0.5.3 (October 11, 2026)
+
+* `gaitkeeper fetch` retries a rate-limited or briefly failing download, so a first run
+  from a notebook service or a CI runner no longer fails on one file.
+* A `doctor` walkthrough ([docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)) and a Colab quickstart
+  ([notebooks/quickstart.ipynb](notebooks/quickstart.ipynb)); `doctor --md` and the verdict
+  in `--json` (PR #16) are released.
 
 ## Done in 0.5.2 (October 10 to 11, 2026)
 

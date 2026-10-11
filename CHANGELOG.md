@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.3
 
 * `gaitkeeper fetch` waits and tries again when the host answers 429 or a 5xx (2, 5, 10
   and 20 s, or the host's `Retry-After` when longer). A first run from a shared address,
@@ -8,6 +8,12 @@
 * A walkthrough of `doctor` on the unitree_rl_lab G1 policy, its report explained section
   by section (`docs/WALKTHROUGH.md`), and the same run as a Colab notebook
   (`notebooks/quickstart.ipynb`).
+* `doctor --md` writes the report as markdown
+  ([#16](https://github.com/dundysm/gaitkeeper/pull/16)): a heading naming the policy
+  file, the contract gaps, the command response, the waypoint tour, and the verdict last, followed by the tour stages
+  that cost survival. `doctor --json` gains `summary` and `ok`, so a piped caller no longer
+  has to read the verdict out of the exit code. The terminal prints the same sentences,
+  wrapped to a fixed width.
 
 ## 0.5.2
 
@@ -100,12 +106,6 @@
 ## 0.5.1
 
 Fixes from an external audit of 0.5.0.
-
-* `doctor --md` writes a report: a heading naming the policy file, the contract gaps, the
-  command response, the waypoint tour, and the verdict last, followed by the tour stages
-  that cost survival. `doctor --json` gains `summary` and `ok`, so a piped caller no longer
-  has to read the verdict out of the exit code. The terminal prints the same sentences,
-  wrapped to a fixed width.
 
 * Boundary C applies the contract's processed-target clip, as the runner does. A correct
   trace from a deploy that clips its targets (Unitree deploy.yaml, Isaac Lab, legged_gym,

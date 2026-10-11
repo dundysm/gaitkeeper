@@ -206,3 +206,19 @@ def test_fetch_gives_up_after_its_retries_and_does_not_retry_a_404(tmp_path, mon
     with pytest.raises(fixtures.FixtureError, match="404"):
         fixtures.fetch("fake", tmp_path / "b", base_url=url, log=lambda m: None)
     assert calls["n"] == 1 and waits == []
+
+
+def test_the_cli_starts_without_mujoco():
+    """The base install has no MuJoCo: `--version`, `fetch` and `inspect` must still start."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; sys.modules['mujoco'] = None\n"
+        "from gaitkeeper.cli import main\n"
+        "try:\n    main(['--version'])\nexcept SystemExit as e:\n    assert e.code == 0, e.code\n"
+        "assert main(['fetch', '--list']) == 0\n"
+    )
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-400:]
+    assert "gaitkeeper" in r.stdout

@@ -15,7 +15,6 @@ import textwrap
 from pathlib import Path
 from typing import NoReturn
 
-from .bench import FINDING_WIDTH
 from .contract import Contract
 from .env import env
 from .trace import Trace
@@ -554,6 +553,8 @@ def _adapter_one(args: argparse.Namespace, variant: str | None) -> int:
 
 def _wrap(sentence: str) -> list[str]:
     """The sentences doctor prints, wrapped the width it always wrapped at."""
+    from .bench import FINDING_WIDTH  # bench imports the runner, which needs MuJoCo
+
     return textwrap.wrap(sentence, width=FINDING_WIDTH) or [""]
 
 

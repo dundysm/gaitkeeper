@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+* Windows is supported and tested: CI runs the suite on windows-latest
+  ([#19](https://github.com/dundysm/gaitkeeper/pull/19), by @SakarPaisen). Reading a
+  benchmark adapter works there now: the compiled library links the C++ runtime into
+  itself (`-static`), since Python 3.8+ no longer searches PATH for a DLL's
+  dependencies, and two processes building the same adapter at once no longer fail on
+  the second one's replace.
+* An interactive dead-zone demo of the unitree_rl_lab G1 policy
+  ([dundysm.github.io/gaitkeeper/demo](https://dundysm.github.io/gaitkeeper/demo/)).
+
 ## 0.5.4
 
 * The command line starts without MuJoCo again. Since `doctor --md` (#16), `cli` imported

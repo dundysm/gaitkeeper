@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -384,6 +385,14 @@ def _cache_dir() -> Path:
     return d
 
 
+def _lib_suffix() -> str:
+    """The platform's shared-library suffix: `.pyd` on Windows, `.so` elsewhere.
+
+    The suffix is only convention; `ctypes.CDLL` loads a full path whatever it ends in.
+    """
+    return ".pyd" if sys.platform == "win32" else ".so"
+
+
 def build(policy_cpp: str | Path, cls: str = "Policy") -> Path:
     """Compile the adapter with the CPU shim; returns the shared library's path."""
     src = Path(policy_cpp).read_text()
@@ -395,7 +404,8 @@ def build(policy_cpp: str | Path, cls: str = "Policy") -> Path:
     code = _PROLOGUE + "\n" + body + defs + _EPILOGUE
     key = hashlib.sha256((code + "v1").encode()).hexdigest()[:16]
     d = _cache_dir()
-    lib = d / f"{ns}_{cls}_{key}.so"
+    suffix = _lib_suffix()
+    lib = d / f"{ns}_{cls}_{key}{suffix}"
     if lib.exists():
         return lib
     # Compile under names unique to this process, then move the library into place in one
@@ -403,15 +413,30 @@ def build(policy_cpp: str | Path, cls: str = "Policy") -> Path:
     # is killed leaves only a temporary that is never reused.
     tag = f".{os.getpid()}.{uuid.uuid4().hex[:8]}"
     cpp = d / f"{ns}_{cls}_{key}{tag}.cpp"
-    tmp = d / f"{ns}_{cls}_{key}{tag}.so.part"
+    tmp = d / f"{ns}_{cls}_{key}{tag}{suffix}.part"
     cpp.write_text(code)
     cmd = [_compiler(), "-std=c++17", "-O1", "-shared", "-fPIC", "-w", str(cpp), "-o", str(tmp)]
+    if sys.platform == "win32":
+        # A mingw build links libstdc++-6.dll and libgcc_s_seh-1.dll, and Python 3.8+
+        # no longer searches PATH for a DLL's own dependencies, so the load fails with
+        # "Could not find module ... (or one of its dependencies)". Linking the runtime
+        # into the library (`-static`) keeps it self-contained and loadable.
+        cmd.insert(-2, "-static")
     try:
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             lines = [ln for ln in r.stderr.splitlines() if "error" in ln][:8]
             raise RuntimeError(f"compiling {policy_cpp} for the CPU failed:\n" + "\n".join(lines))
-        os.replace(tmp, lib)
+        try:
+            os.replace(tmp, lib)
+        except PermissionError:
+            # Two processes compiled the same key at once. On Windows, replacing the
+            # destination fails while the other process holds it open, where POSIX
+            # `rename` would just win. The loser's work is identical and the winner's
+            # library is already in place, so a completed `lib` is success, not an error.
+            if not lib.exists():
+                raise
+            return lib
     finally:
         cpp.unlink(missing_ok=True)
         tmp.unlink(missing_ok=True)

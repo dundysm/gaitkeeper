@@ -4,6 +4,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from gaitkeeper.readers import twb_adapter
+
 TOY = Path(__file__).parent / "data" / "twb_toy" / "policy.cpp"
 needs_cxx = pytest.mark.skipif(
     not (shutil.which("g++") or shutil.which("clang++")), reason="needs a C++ compiler"
@@ -135,7 +137,8 @@ def test_concurrent_builds_never_load_a_partial_library(tmp_path):
         out = list(ex.map(_load_toy, [str(tmp_path)] * 8))
     assert out == ["ok"] * 8
     left = sorted(p.name for p in (tmp_path / "twb_adapters").iterdir())
-    assert len(left) == 1 and left[0].endswith(".so"), left
+    # The extension name is the platform's: `.pyd` on Windows, `.so` elsewhere.
+    assert len(left) == 1 and left[0].endswith(twb_adapter._lib_suffix()), left
 
 
 @needs_cxx

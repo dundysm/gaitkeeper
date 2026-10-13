@@ -49,7 +49,9 @@ def _fake_set(tmp_path, monkeypatch, content=b"policy bytes", pinned=None):
         },
     )
     monkeypatch.setattr(fixtures, "manifest", lambda: {"fake": fake})
-    return "file://" + str(tmp_path / "upstream") + "/{repo}/{commit}/{path}"
+    # `as_uri()` so the base is a real file URI on every platform: `str(Path)` is
+    # `C:\\...` on Windows, which `urlopen` reads as a path with an authority.
+    return (tmp_path / "upstream").as_uri() + "/{repo}/{commit}/{path}"
 
 
 def test_fetch_downloads_checks_and_skips(tmp_path, monkeypatch):

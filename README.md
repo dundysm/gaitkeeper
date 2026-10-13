@@ -29,7 +29,8 @@ gaitkeeper tells them apart, and says how much evidence backs the answer.
   <br>
   <sub>The official unitree_rl_lab G1 policy in unitree_mujoco, rendered from gaitkeeper's runner
   (<code>tools/render_readme_media.py</code>). Below about 0.2 m/s it stands still. A waypoint tour is
-  mostly small commands, which is one reason it can score 0% with a harness that follows the contract.</sub>
+  mostly small commands, which is one reason it can score 0% with a harness that follows the contract.</sub><br>
+  <sub><a href="https://dundysm.github.io/gaitkeeper/demo/"><b>Try the interactive dead-zone demo</b></a>: drag the command and watch the G1 stand or walk.</sub>
 </p>
 
 ## What it found

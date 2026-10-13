@@ -504,6 +504,7 @@ gaitkeeper bench --adapter twb/policies/rl_gym/policy.cpp --onnx twb/policies/rl
 gaitkeeper bench --adapter twb/policies/gr00t_wbc/policy.cpp --variant gr00t_wbc_h066_p012 \\
     --onnx twb/policies/gr00t_wbc/model_walk.onnx --mjcf twb/assets/g1_29dof.xml --seeds 10</pre>
   <p>Source, method and every command: <a href="https://github.com/dundysm/gaitkeeper">github.com/dundysm/gaitkeeper</a>.</p>
+  <p>Interactive: <a href="../demo/">command dead zones of the unitree_rl_lab G1 policy</a>, drag the command and watch it stand or walk.</p>
 </section>
 
 <section>
